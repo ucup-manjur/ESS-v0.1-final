@@ -1,0 +1,32 @@
+======Hardware======
+button 1 = 
+button 2 =
+button 3 =
+
+LED 1 =
+LED 2 =
+LED 3 =
+
+throttle =
+
+imu
+
+======Bluetooth======
+up gear
+down gear
+start revving
+stop revving
+
+sending file
+
+=======Canbus=======
+rpm
+speed
+hv ev battery power
+
+angle steering
+soh
+battery pack temperature
+
+=======RS485========
+-
