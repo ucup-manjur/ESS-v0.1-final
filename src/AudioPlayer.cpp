@@ -6,6 +6,7 @@ uint8_t *AudioPlayer::audioBuffer = nullptr;
 uint32_t AudioPlayer::audioLength = 0;
 volatile uint32_t AudioPlayer::index = 0;
 bool AudioPlayer::isMuted = false;
+uint32_t AudioPlayer::currentSampleRate = 8000;
 
 // Konstruktor AudioPlayer
 AudioPlayer::AudioPlayer() {}
@@ -73,6 +74,7 @@ void IRAM_ATTR AudioPlayer::onTimerISR() {
 // Set sample rate default 16kHz
 void AudioPlayer::begin() {
   dacWrite(AUDIO_DAC_PIN, 128);  // idle mid
+  currentSampleRate = 8000;
 
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &AudioPlayer::onTimerISR, true);
@@ -132,6 +134,7 @@ void AudioPlayer::setSampleRate(uint32_t rate) {
   if (rate < 8000) rate = 8000;
   if (rate > 44100) rate = 44100;
 
+  currentSampleRate = rate;
   timerAlarmDisable(timer);
   timerAlarmWrite(timer, 1000000 / rate, true);
   timerAlarmEnable(timer);
@@ -164,9 +167,7 @@ bool AudioPlayer::isPlaying() {
 }
 
 uint32_t AudioPlayer::getSampleRate() {
-  if (!timer) return 16000;
-  uint64_t alarmValue = timerAlarmRead(timer);
-  return alarmValue > 0 ? 1000000 / alarmValue : 16000;
+  return currentSampleRate;
 }
 
 void AudioPlayer::cleanupAudioBuffer() {

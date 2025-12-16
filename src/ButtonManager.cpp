@@ -68,14 +68,34 @@ void ButtonManager::update() {
     }
   }
   
-  // Button C - Simple press
-  if (debounceButton(BUTTON_C_PIN, btnC_lastState, btnC_lastChange)) {
-    if (btnC_lastState == LOW) {
-      portENTER_CRITICAL(&flagMutex);
-      btnC_pressed = true;
-      portEXIT_CRITICAL(&flagMutex);
-    }
-  }
+  // Button C - Short and Long press (5 sec for format)
+  // if (debounceButton(BUTTON_C_PIN, btnC_lastState, btnC_lastChange)) {
+  //   if (btnC_lastState == LOW) {
+  //     btnC_pressStart = now;
+  //     btnC_longTriggered = false;
+  //     Serial.println("🔴 Button C pressed - starting timer");
+  //   } else {
+  //     unsigned long pressDuration = (now >= btnC_pressStart) ? (now - btnC_pressStart) : (ULONG_MAX - btnC_pressStart + now + 1);
+  //     Serial.printf("🔵 Button C released after %lu ms\n", pressDuration);
+  //     if (!btnC_longTriggered && pressDuration < FORMAT_PRESS_MS) {
+  //       portENTER_CRITICAL(&flagMutex);
+  //       btnC_pressed = true;
+  //       portEXIT_CRITICAL(&flagMutex);
+  //       Serial.println("✅ Button C short press detected");
+  //     }
+  //   }
+  // }
+  
+  // if (btnC_lastState == LOW && !btnC_longTriggered) {
+  //   unsigned long elapsed = (now >= btnC_pressStart) ? (now - btnC_pressStart) : (ULONG_MAX - btnC_pressStart + now + 1);
+  //   if (elapsed >= FORMAT_PRESS_MS) {
+  //     portENTER_CRITICAL(&flagMutex);
+  //     btnC_longPressed = true;
+  //     portEXIT_CRITICAL(&flagMutex);
+  //     btnC_longTriggered = true;
+  //     Serial.println("❗ Button C LONG PRESS (5s) detected - FORMAT TRIGGERED!");
+  //   }
+  // }
 }
 
 bool ButtonManager::getAndClearFlag(volatile bool &flag) {
@@ -104,4 +124,8 @@ bool ButtonManager::isButtonCPressed() {
 
 bool ButtonManager::isButtonBLongPress() {
   return getAndClearFlag(btnB_longPressed);
+}
+
+bool ButtonManager::isButtonCLongPress() {
+  return getAndClearFlag(btnC_longPressed);
 }

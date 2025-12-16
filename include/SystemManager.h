@@ -34,5 +34,6 @@ private:
   void enterProgrammingMode();
   void exitProgrammingMode();
   void loadCurrentSound();
+  void formatLittleFS();
 
 };

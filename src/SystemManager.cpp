@@ -38,6 +38,15 @@ void SystemManager::handleNormalMode() {
   if (buttons.isButtonBLongPress()) {
     enterProgrammingMode();
   }
+  
+  if (buttons.isButtonCPressed()) {
+    Serial.println("🔘 Button C short press handled");
+  }
+  
+  if (buttons.isButtonCLongPress()) {
+    Serial.println("🚨 Button C LONG PRESS - Calling formatLittleFS()");
+    formatLittleFS();
+  }
 }
 
 void SystemManager::handleProgrammingMode() {
@@ -48,11 +57,20 @@ void SystemManager::handleProgrammingMode() {
   if (buttons.isButtonBLongPress()) {
     exitProgrammingMode();
   }
+  
+  if (buttons.isButtonCPressed()) {
+    Serial.println("🔘 Button C short press in programming mode");
+  }
+  
+  if (buttons.isButtonCLongPress()) {
+    Serial.println("🚨 Button C LONG PRESS in programming mode - Calling formatLittleFS()");
+    formatLittleFS();
+  }
 }
 
 void SystemManager::switchRegister() {
   currentRegister++;
-  if (currentRegister > 3) currentRegister = 1;
+  if (currentRegister > 4) currentRegister = 1;
   
   leds.setRegister(currentRegister);
   Serial.printf("📍 Register: %d\n", currentRegister);
@@ -66,7 +84,7 @@ void SystemManager::togglePlayback() {
   isPlaying = !isPlaying;
   
   if (isPlaying) {
-    // leds.setRegister(currentRegister);
+    leds.setRegister(currentRegister);
     loadCurrentSound();
     Serial.println("▶️ Play");
   } else {
@@ -79,6 +97,7 @@ void SystemManager::togglePlayback() {
 void SystemManager::enterProgrammingMode() {
   currentMode = MODE_PROGRAMMING;
   leds.setBlinkMode(true);
+  ble.enableFileTransfer(true);
   Serial.println("🛠️ Programming Mode");
 }
 
@@ -86,6 +105,7 @@ void SystemManager::exitProgrammingMode() {
   currentMode = MODE_NORMAL;
   leds.setBlinkMode(false);
   leds.setRegister(currentRegister);
+  ble.enableFileTransfer(false);
   Serial.println("🎮 Normal Mode");
 }
 
@@ -96,6 +116,21 @@ void SystemManager::handleBLECommands() {
   uint8_t* data = ble.getCommandData();
   
   switch(cmd) {
+    case CMD_GEAR_UP:
+      // if (currentGear < 4) {
+      //   currentGear++;
+      //   Serial.printf("📱 Manual Gear Up: %d\n", currentGear);
+      // }
+        Serial.printf("📱 Manual Gear Up");
+      break;
+      
+    case CMD_GEAR_DOWN:
+      // if (currentGear > 0) {
+      //   currentGear--;
+      //   Serial.printf("📱 Manual Gear Down: %d\n", currentGear);
+      // }
+        Serial.printf("📱 Manual Gear Down");
+      break;
     case CMD_REV_START:
       Serial.println("📱 BLE Rev Start");
       break;
@@ -127,16 +162,79 @@ void SystemManager::handleBLECommands() {
     case CMD_REQ_FILE_LIST:
       ble.replyFileList();
       break;
+      
+    case CMD_DELETE_FILE:
+      if (ble.getCommandDataLength() > 0) {
+        // Value 1=engine, 2=shift, 3=effects folder
+        const char* folders[] = {"", "/audio/engine", "/audio/shift", "/audio/effects"};
+        if (data[0] >= 1 && data[0] <= 3) {
+          ble.deleteFile((String(folders[data[0]]) + "/upload.tmp").c_str());
+          ble.listAllAudioFiles();
+          Serial.printf("📱 BLE Delete File: folder %d\n", data[0]);
+        }
+      }
+      break;
+      
+    case CMD_DELETE_FOLDER:
+      if (ble.getCommandDataLength() > 0) {
+        const char* folders[] = {"", "/audio/engine", "/audio/shift", "/audio/effects"};
+        if (data[0] >= 1 && data[0] <= 3) {
+          ble.deleteFolder(folders[data[0]]);
+          // ble.createAudioFolders(); // Recreate empty folder
+          ble.listAllAudioFiles();
+          Serial.printf("📱 BLE Delete Folder: %d\n", data[0]);
+        }
+      }
+      break;
   }
 }
 
 void SystemManager::loadCurrentSound() {
   if (!player) return;
   
-  String filename = "/sound" + String(currentRegister) + ".raw";
-  if (player->loadFile(filename.c_str())) {
-    player->startPlayback();
+  // Mapping register ke folder: 1=/Audio, 2=/Audio1, 3=/Audio2, 4=/Audio3
+  String folderPath;
+  if (currentRegister == 1) {
+    folderPath = "/Audio";
   } else {
-    Serial.printf("⚠️ File tidak ada: %s\n", filename.c_str());
+    folderPath = "/Audio" + String(currentRegister - 1);
   }
+  
+  File dir = LittleFS.open(folderPath);
+  
+  if (!dir || !dir.isDirectory()) {
+    Serial.printf("⚠️ Folder tidak ada: %s\n", folderPath.c_str());
+    return;
+  }
+  
+  File file = dir.openNextFile();
+  String foundFile = "";
+  
+  while (file) {
+    if (!file.isDirectory()) {
+      String filename = file.name();
+      if (filename.endsWith(".raw")) {
+        foundFile = folderPath + "/" + filename;
+        break;
+      }
+    }
+    file = dir.openNextFile();
+  }
+  dir.close();
+  
+  if (foundFile.length() > 0) {
+    if (player->loadFile(foundFile.c_str())) {
+      player->startPlayback();
+      Serial.printf("✅ Loaded: %s\n", foundFile.c_str());
+    } else {
+      Serial.printf("❌ Failed to load: %s\n", foundFile.c_str());
+    }
+  } else {
+    Serial.printf("⚠️ No .raw files in: %s\n", folderPath.c_str());
+  }
+}
+
+void SystemManager::formatLittleFS() {
+  Serial.println("🚨 TOMBOL 3 DITEKAN 5 DETIK - FORMAT LITTLEFS!");
+  ble.formatLittleFS();
 }

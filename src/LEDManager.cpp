@@ -41,9 +41,15 @@ void LEDManager::update() {
       lastBlink = now;
       
       if (blinkState) {
-        digitalWrite(LED_1_PIN, currentRegister == 1 ? LOW : HIGH);
-        digitalWrite(LED_2_PIN, currentRegister == 2 ? LOW : HIGH);
-        digitalWrite(LED_3_PIN, currentRegister == 3 ? LOW : HIGH);
+        if (currentRegister == 4) {
+          digitalWrite(LED_1_PIN, LOW);
+          digitalWrite(LED_2_PIN, LOW);
+          digitalWrite(LED_3_PIN, LOW);
+        } else {
+          digitalWrite(LED_1_PIN, currentRegister == 1 ? LOW : HIGH);
+          digitalWrite(LED_2_PIN, currentRegister == 2 ? LOW : HIGH);
+          digitalWrite(LED_3_PIN, currentRegister == 3 ? LOW : HIGH);
+        }
       } else {
         setAllOff();
       }
@@ -54,9 +60,16 @@ void LEDManager::update() {
 void LEDManager::setRegister(uint8_t reg) {
   currentRegister = reg;
   if (!blinkMode) {
-    digitalWrite(LED_1_PIN, reg == 1 ? LOW : HIGH);
-    digitalWrite(LED_2_PIN, reg == 2 ? LOW : HIGH);
-    digitalWrite(LED_3_PIN, reg == 3 ? LOW : HIGH);
+    if (reg == 4) {
+      // Register 4: semua LED nyala
+      digitalWrite(LED_1_PIN, LOW);
+      digitalWrite(LED_2_PIN, LOW);
+      digitalWrite(LED_3_PIN, LOW);
+    } else {
+      digitalWrite(LED_1_PIN, reg == 1 ? LOW : HIGH);
+      digitalWrite(LED_2_PIN, reg == 2 ? LOW : HIGH);
+      digitalWrite(LED_3_PIN, reg == 3 ? LOW : HIGH);
+    }
   }
 }
 
