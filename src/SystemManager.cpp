@@ -40,11 +40,10 @@ void SystemManager::handleNormalMode() {
   }
   
   if (buttons.isButtonCPressed()) {
-    Serial.println("🔘 Button C short press handled");
+    // Handle button C short press
   }
   
   if (buttons.isButtonCLongPress()) {
-    Serial.println("🚨 Button C LONG PRESS - Calling formatLittleFS()");
     formatLittleFS();
   }
 }
@@ -59,11 +58,10 @@ void SystemManager::handleProgrammingMode() {
   }
   
   if (buttons.isButtonCPressed()) {
-    Serial.println("🔘 Button C short press in programming mode");
+    // Handle button C short press in programming mode
   }
   
   if (buttons.isButtonCLongPress()) {
-    Serial.println("🚨 Button C LONG PRESS in programming mode - Calling formatLittleFS()");
     formatLittleFS();
   }
 }

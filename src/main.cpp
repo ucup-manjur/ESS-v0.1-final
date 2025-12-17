@@ -38,26 +38,19 @@ void loop() {
   static int lastRaw = 0;
   unsigned long now = millis();
   
-  // Throttle input update
-  if (now - lastUpdate >= 50) {
+  // Throttle input update every 100ms
+  if (now - lastUpdate >= 100) {
     int raw = analogRead(THROTTLE_ADC_PIN);
     
-    if (abs(raw - lastRaw) > 50) {
-      player.updateSampleRateFromADC(raw);
+    // Debug ADC values
+    if (abs(raw - lastRaw) > 20) {
+      Serial.printf("🎯 ADC: %d -> Rate: %d Hz\n", raw, map(raw, 0, 4095, 8000, 44100));
       lastRaw = raw;
     }
     
+    // Always update, let AudioPlayer handle the optimization
+    player.updateSampleRateFromADC(raw);
     lastUpdate = now;
-  }
-  
-  // RPM logging only when sample rate changes
-  static uint32_t lastRPM = 0;
-  uint32_t currentSampleRate = player.getSampleRate();
-  uint32_t currentRPM = map(currentSampleRate, 8000, 44100, 1000, 18000);
-  
-  if (currentRPM != lastRPM) {
-    Serial.printf("📊 RPM: %d | Rate: %d Hz\n", currentRPM, currentSampleRate);
-    lastRPM = currentRPM;
   }
 }
 

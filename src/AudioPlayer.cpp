@@ -134,10 +134,13 @@ void AudioPlayer::setSampleRate(uint32_t rate) {
   if (rate < 8000) rate = 8000;
   if (rate > 44100) rate = 44100;
 
-  currentSampleRate = rate;
-  timerAlarmDisable(timer);
-  timerAlarmWrite(timer, 1000000 / rate, true);
-  timerAlarmEnable(timer);
+  // Only update timer if sample rate actually changed
+  if (rate != currentSampleRate) {
+    currentSampleRate = rate;
+    timerAlarmDisable(timer);
+    timerAlarmWrite(timer, 1000000 / rate, true);
+    timerAlarmEnable(timer);
+  }
 }
 
 // Update sample rate berdasarkan nilai ADC (0-4095)
