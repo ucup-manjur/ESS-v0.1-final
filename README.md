@@ -1,21 +1,37 @@
 📋 PANDUAN KERJA ESS (Engine Sound Simulator)
+
 🎮 KONTROL FISIK
+
 Tombol 1 (Button A)
-•	Press: Ganti register (1→2→3→4→1)
-•	LED: Menunjukkan register aktif
-o	Register 1: LED 1 nyala
-o	Register 2: LED 2 nyala
-o	Register 3: LED 3 nyala
-o	Register 4: Semua LED nyala
+
+   •	Press: Ganti register (1→2→3→4→1)
+   
+   •	LED: Menunjukkan register aktif
+   
+   o	Register 1: LED 1 nyala
+   
+   o	Register 2: LED 2 nyala
+   
+   o	Register 3: LED 3 nyala
+   
+   o	Register 4: Semua LED nyala
+
 Tombol 2 (Button B)
-•	Press: Play/Stop audio
-•	Long Press (3s): Masuk/keluar Programming Mode
-•	LED: Mati saat stop, nyala saat play
+
+   •	Press: Play/Stop audio
+   
+   •	Long Press (3s): Masuk/keluar Programming Mode
+   
+   •	LED: Mati saat stop, nyala saat play
+
 Tombol 3 (Button C)
-•	Long Press (5s): Format LittleFS (hapus semua file)
-Potentiometer
-•	Fungsi: Kontrol RPM engine (1000-18000 RPM)
-•	Range: Sample rate 8000-44100 Hz
+
+   •	Long Press (5s): Format LittleFS (hapus semua file)
+   Potentiometer
+   
+   •	Fungsi: Kontrol RPM engine (1000-18000 RPM)
+   
+   •	Range: Sample rate 8000-44100 Hz
 ________________________________________
 🎵 SISTEM AUDIO
 Struktur File
