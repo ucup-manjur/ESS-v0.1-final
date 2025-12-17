@@ -20,6 +20,8 @@
 #define CMD_FILE_START       0x20
 #define CMD_FILE_DATA        0x21
 #define CMD_FILE_END         0x22
+#define CMD_DELETE_FILE      0x23
+#define CMD_DELETE_FOLDER    0x24
 
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
@@ -45,6 +47,13 @@ public:
   void replyFileList();
   void setActiveFile(uint8_t index);
   void update();
+  void enableFileTransfer(bool enable);
+  void createAudioFolders();
+  void listRawFiles(const char* folder);
+  void listAllAudioFiles();
+  void deleteFile(const char* filepath);
+  void deleteFolder(const char* folderpath);
+  void formatLittleFS();
   
 private:
   static NimBLECharacteristic* pCharacteristic;

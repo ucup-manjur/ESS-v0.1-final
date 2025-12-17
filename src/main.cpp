@@ -50,16 +50,14 @@ void loop() {
     lastUpdate = now;
   }
   
-  // RPM logging every 1 second
-  if (now - lastRPMLog >= 1000) {
-    uint32_t currentSampleRate = player.getSampleRate();
-    uint32_t currentRPM = map(currentSampleRate, 8000, 44100, 1000, 18000);
-    uint8_t gear = sysManager.getCurrentGear();
-    
-    Serial.printf("📊 RPM: %d | Gear: %d | Rate: %d Hz\n", 
-                  currentRPM, gear, currentSampleRate);
-    
-    lastRPMLog = now;
+  // RPM logging only when sample rate changes
+  static uint32_t lastRPM = 0;
+  uint32_t currentSampleRate = player.getSampleRate();
+  uint32_t currentRPM = map(currentSampleRate, 8000, 44100, 1000, 18000);
+  
+  if (currentRPM != lastRPM) {
+    Serial.printf("📊 RPM: %d | Rate: %d Hz\n", currentRPM, currentSampleRate);
+    lastRPM = currentRPM;
   }
 }
 

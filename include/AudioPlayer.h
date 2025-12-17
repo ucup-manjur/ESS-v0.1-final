@@ -35,4 +35,5 @@ private:
   static uint32_t audioLength;
   static volatile uint32_t index;
   static bool isMuted;
+  static uint32_t currentSampleRate;
 };
