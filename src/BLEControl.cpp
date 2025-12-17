@@ -168,13 +168,15 @@ void BLEControl::startFileTransfer() {
     cancelFileTransfer();
   }
   
-  currentFilename = "/audio/engine/upload.tmp";
+  // Get current register from SystemManager to determine target folder
+  String folderPath = getCurrentRegisterFolder();
+  currentFilename = folderPath + "/upload.tmp";
   tmpFile = LittleFS.open(currentFilename, "w");
   
   if (tmpFile) {
     fileReceiving = true;
     receivedBytes = 0;
-    Serial.println("📥 File transfer started");
+    Serial.printf("📥 File transfer started -> %s\n", folderPath.c_str());
   } else {
     Serial.println("❌ Failed to create temp file");
   }
@@ -191,7 +193,23 @@ void BLEControl::endFileTransfer() {
   if (fileReceiving && tmpFile) {
     tmpFile.close();
     fileReceiving = false;
-    Serial.printf("✅ File transfer complete: %d bytes\n", receivedBytes);
+    
+    // Rename upload.tmp to proper filename based on register
+    String folderPath = getCurrentRegisterFolder();
+    String finalFilename = folderPath + "/engine.raw";
+    
+    // Remove old file if exists
+    if (LittleFS.exists(finalFilename)) {
+      LittleFS.remove(finalFilename);
+    }
+    
+    // Rename temp file to final name
+    if (LittleFS.rename(currentFilename, finalFilename)) {
+      Serial.printf("✅ File saved: %s (%d bytes)\n", finalFilename.c_str(), receivedBytes);
+    } else {
+      Serial.printf("❌ Failed to rename file: %s\n", finalFilename.c_str());
+    }
+    
     listAllAudioFiles();
   }
 }
@@ -326,6 +344,33 @@ void BLEControl::deleteFolder(const char* folderpath) {
     Serial.printf("✅ Deleted folder: %s\n", folderpath);
   } else {
     Serial.printf("❌ Failed to delete folder: %s\n", folderpath);
+  }
+}
+
+String BLEControl::getCurrentRegisterFolder() {
+  // Get current register from external source (will be set by SystemManager)
+  if (currentRegister == 1) return "/Audio";
+  if (currentRegister == 2) return "/Audio1";
+  if (currentRegister == 3) return "/Audio2";
+  if (currentRegister == 4) return "/Audio3";
+  return "/Audio"; // default
+}
+
+void BLEControl::setCurrentRegister(uint8_t reg) {
+  currentRegister = reg;
+}
+
+void BLEControl::sendStatus(uint8_t mode, uint8_t reg, bool playing) {
+  if (pCharacteristic) {
+    uint8_t status[4];
+    status[0] = 0xAA;  // Same as command protocol
+    status[1] = 0xFF;  // Status command
+    status[2] = mode;  // 0=Normal, 1=Programming
+    status[3] = status[1] ^ status[2];  // Checksum
+    
+    pCharacteristic->setValue(status, 4);
+    pCharacteristic->notify();
+    Serial.printf("📡 Status sent: Mode=%d\n", mode);
   }
 }
 

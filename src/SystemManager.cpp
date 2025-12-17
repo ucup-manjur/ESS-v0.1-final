@@ -9,6 +9,7 @@ void SystemManager::begin(AudioPlayer* audioPlayer) {
   ble.begin();
   
   leds.setRegister(currentRegister);
+  ble.setCurrentRegister(currentRegister);
   Serial.println("✅ System ready");
 }
 
@@ -44,7 +45,7 @@ void SystemManager::handleNormalMode() {
   }
   
   if (buttons.isButtonCLongPress()) {
-    formatLittleFS();
+    Serial.println("⚠️ Format hanya bisa dalam Programming Mode!");
   }
 }
 
@@ -71,6 +72,7 @@ void SystemManager::switchRegister() {
   if (currentRegister > 4) currentRegister = 1;
   
   leds.setRegister(currentRegister);
+  ble.setCurrentRegister(currentRegister);
   Serial.printf("📍 Register: %d\n", currentRegister);
   
   if (currentMode == MODE_NORMAL && isPlaying) {
@@ -96,6 +98,7 @@ void SystemManager::enterProgrammingMode() {
   currentMode = MODE_PROGRAMMING;
   leds.setBlinkMode(true);
   ble.enableFileTransfer(true);
+  ble.sendStatus(currentMode);
   Serial.println("🛠️ Programming Mode");
 }
 
@@ -104,6 +107,7 @@ void SystemManager::exitProgrammingMode() {
   leds.setBlinkMode(false);
   leds.setRegister(currentRegister);
   ble.enableFileTransfer(false);
+  ble.sendStatus(currentMode);
   Serial.println("🎮 Normal Mode");
 }
 
@@ -184,6 +188,11 @@ void SystemManager::handleBLECommands() {
         }
       }
       break;
+      
+    case CMD_REQ_STATUS:
+      ble.sendStatus(currentMode);
+      Serial.println("📱 BLE Status Request");
+      break;
   }
 }
 
@@ -198,37 +207,13 @@ void SystemManager::loadCurrentSound() {
     folderPath = "/Audio" + String(currentRegister - 1);
   }
   
-  File dir = LittleFS.open(folderPath);
+  String filename = folderPath + "/engine.raw";
   
-  if (!dir || !dir.isDirectory()) {
-    Serial.printf("⚠️ Folder tidak ada: %s\n", folderPath.c_str());
-    return;
-  }
-  
-  File file = dir.openNextFile();
-  String foundFile = "";
-  
-  while (file) {
-    if (!file.isDirectory()) {
-      String filename = file.name();
-      if (filename.endsWith(".raw")) {
-        foundFile = folderPath + "/" + filename;
-        break;
-      }
-    }
-    file = dir.openNextFile();
-  }
-  dir.close();
-  
-  if (foundFile.length() > 0) {
-    if (player->loadFile(foundFile.c_str())) {
-      player->startPlayback();
-      Serial.printf("✅ Loaded: %s\n", foundFile.c_str());
-    } else {
-      Serial.printf("❌ Failed to load: %s\n", foundFile.c_str());
-    }
+  if (player->loadFile(filename.c_str())) {
+    player->startPlayback();
+    Serial.printf("✅ Loaded: %s\n", filename.c_str());
   } else {
-    Serial.printf("⚠️ No .raw files in: %s\n", folderPath.c_str());
+    Serial.printf("⚠️ File tidak ada: %s\n", filename.c_str());
   }
 }
 

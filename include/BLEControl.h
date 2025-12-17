@@ -22,6 +22,7 @@
 #define CMD_FILE_END         0x22
 #define CMD_DELETE_FILE      0x23
 #define CMD_DELETE_FOLDER    0x24
+#define CMD_REQ_STATUS       0x25
 
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
@@ -54,6 +55,9 @@ public:
   void deleteFile(const char* filepath);
   void deleteFolder(const char* folderpath);
   void formatLittleFS();
+  void setCurrentRegister(uint8_t reg);
+  String getCurrentRegisterFolder();
+  void sendStatus(uint8_t mode, uint8_t reg = 0, bool playing = false);
   
 private:
   static NimBLECharacteristic* pCharacteristic;
@@ -68,6 +72,7 @@ private:
   size_t receivedBytes = 0;
   String currentFilename;
   File tmpFile;
+  uint8_t currentRegister = 1;
   
   class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer);
