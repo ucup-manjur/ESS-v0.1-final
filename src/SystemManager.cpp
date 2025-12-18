@@ -159,20 +159,35 @@ void SystemManager::handleBLECommands() {
       break;
       
     case CMD_SET_AUDIO_PLAY:
-      if (ble.getCommandDataLength() > 0 && data[0] >= 1 && data[0] <= 3) {
+      if (ble.getCommandDataLength() > 0 && data[0] >= 1 && data[0] <= 4) {
         currentRegister = data[0];
         leds.setRegister(currentRegister);
-        if (isPlaying) loadCurrentSound();
-        Serial.printf("📱 BLE Set Audio: %d\n", currentRegister);
+        ble.setCurrentRegister(currentRegister);
+        if (isPlaying) {
+          loadCurrentSound();
+        } else {
+          // Start playing the selected register
+          isPlaying = true;
+          leds.setRegister(currentRegister);
+          loadCurrentSound();
+        }
+        Serial.printf("📱 BLE Set Audio Play: Register %d\n", currentRegister);
       }
       break;
       
     case CMD_REQ_FILE_INFO:
-      ble.replyCurrentFile();
+      ble.sendCurrentPlaying();
+      Serial.println("📱 BLE Request File Info");
       break;
       
     case CMD_REQ_FILE_LIST:
-      ble.replyFileList();
+      if (ble.getCommandDataLength() > 0 && data[0] >= 1 && data[0] <= 4) {
+        ble.replyFileList(data[0]);
+        Serial.printf("📱 BLE Request File List: Register %d\n", data[0]);
+      } else {
+        ble.replyFileList(0);  // All folders
+        Serial.println("📱 BLE Request All File Lists");
+      }
       break;
       
     case CMD_DELETE_FILE:

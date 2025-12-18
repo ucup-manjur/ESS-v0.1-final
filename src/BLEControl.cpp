@@ -226,12 +226,54 @@ void BLEControl::cancelFileTransfer() {
   Serial.println("❌ File transfer cancelled");
 }
 
-void BLEControl::replyCurrentFile() {
-  // TODO: Implement current file info reply
+void BLEControl::sendCurrentPlaying() {
+  String folderPath = getCurrentRegisterFolder();
+  String title = "empty";
+  
+  File dir = LittleFS.open(folderPath);
+  if (dir && dir.isDirectory()) {
+    File file = dir.openNextFile();
+    while (file) {
+      if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
+        title = file.name();
+        break;
+      }
+      file = dir.openNextFile();
+    }
+    dir.close();
+  }
+  
+  String response = "0xBB," + title;
+  sendBLEResponse(response);
+  Serial.printf("📡 Current playing: %s\n", title.c_str());
 }
 
-void BLEControl::replyFileList() {
-  // TODO: Implement file list reply
+void BLEControl::replyFileList(uint8_t registerNum) {
+  String response = "0xBB,";
+  
+  for (int i = 0; i < 4; i++) {
+    String folderPath = (i == 0) ? "/Audio" : "/Audio" + String(i);
+    String title = "empty";
+    
+    File dir = LittleFS.open(folderPath);
+    if (dir && dir.isDirectory()) {
+      File file = dir.openNextFile();
+      while (file) {
+        if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
+          title = file.name();
+          break;
+        }
+        file = dir.openNextFile();
+      }
+      dir.close();
+    }
+    
+    response += "reg" + String(i + 1) + ":" + title;
+    if (i < 3) response += ",";
+  }
+  
+  sendBLEResponse(response);
+  Serial.printf("📡 File list sent\n");
 }
 
 void BLEControl::setActiveFile(uint8_t index) {
@@ -363,7 +405,7 @@ void BLEControl::setCurrentRegister(uint8_t reg) {
 void BLEControl::sendStatus(uint8_t mode, uint8_t reg, bool playing) {
   if (pCharacteristic) {
     uint8_t status[4];
-    status[0] = 0xAA;  // Same as command protocol
+    status[0] = 0xBB;  // Same as command protocol
     status[1] = 0xFF;  // Status command
     status[2] = mode;  // 0=Normal, 1=Programming
     status[3] = status[1] ^ status[2];  // Checksum
@@ -371,6 +413,14 @@ void BLEControl::sendStatus(uint8_t mode, uint8_t reg, bool playing) {
     pCharacteristic->setValue(status, 4);
     pCharacteristic->notify();
     Serial.printf("📡 Status sent: Mode=%d\n", mode);
+  }
+}
+
+void BLEControl::sendBLEResponse(String response) {
+  if (pCharacteristic) {
+    pCharacteristic->setValue(response.c_str());
+    pCharacteristic->notify();
+    Serial.printf("📡 BLE Response: %s\n", response.c_str());
   }
 }
 

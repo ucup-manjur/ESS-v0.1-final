@@ -44,8 +44,8 @@ public:
   void writeFileData(const uint8_t* data, size_t len);
   void endFileTransfer();
   void cancelFileTransfer();
-  void replyCurrentFile();
-  void replyFileList();
+  void sendCurrentPlaying();
+  void replyFileList(uint8_t registerNum = 0);
   void setActiveFile(uint8_t index);
   void update();
   void enableFileTransfer(bool enable);
@@ -58,6 +58,7 @@ public:
   void setCurrentRegister(uint8_t reg);
   String getCurrentRegisterFolder();
   void sendStatus(uint8_t mode, uint8_t reg = 0, bool playing = false);
+  void sendBLEResponse(String response);
   
 private:
   static NimBLECharacteristic* pCharacteristic;
