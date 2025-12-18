@@ -87,7 +87,7 @@ void BLEControl::begin() {
     // createAudioFolders();
 
     // --- Init BLE ---
-    NimBLEDevice::init("ESP32_ESS_SERVER");
+    NimBLEDevice::init("QBOOM-Devices");
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);  // power max biar sinyal mantap
 
     // NOTE: MTU paling stabil di-set setelah server dibuat
@@ -125,10 +125,10 @@ void BLEControl::begin() {
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setName("ESP32_ESS_SERVER");
+    // pAdvertising->setName("QBOOM-Devices");
 
     if (pAdvertising->start()) {
-        Serial.println("✅ BLE Started: ESP32_ESS_SERVER");
+        Serial.println("✅ BLE Started: QBOOM-Devices");
         listAllAudioFiles();
     } else {
         Serial.println("❌ BLE Failed to start");
@@ -151,7 +151,7 @@ uint8_t BLEControl::getCommand() {
   commandReady = false;
   uint8_t cmd = pendingCommand;
   pendingCommand = 0;
-  commandDataLen = 0;
+  // Don't reset commandDataLen here - let SystemManager read it first
   return cmd;
 }
 

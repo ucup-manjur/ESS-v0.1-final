@@ -1,12 +1,13 @@
 #include "AudioPlayer.h"
 #include "config.h"
+#include "VolumeControl.h"
 
 hw_timer_t *AudioPlayer::timer = nullptr;
 uint8_t *AudioPlayer::audioBuffer = nullptr;
 uint32_t AudioPlayer::audioLength = 0;
 volatile uint32_t AudioPlayer::index = 0;
-bool AudioPlayer::isMuted = false;
 uint32_t AudioPlayer::currentSampleRate = 8000;
+VolumeControl* AudioPlayer::volumeCtrl = nullptr;
 
 // Konstruktor AudioPlayer
 AudioPlayer::AudioPlayer() {}
@@ -60,13 +61,17 @@ void AudioPlayer::normalizePCM8(uint8_t *data, size_t length) {
 // ISR timer untuk output audio ke DAC
 // Dipanggil setiap interval sample rate (misal 16kHz = tiap 62.5μs)
 void IRAM_ATTR AudioPlayer::onTimerISR() {
-  if (isMuted || !audioBuffer || audioLength == 0) {
+  if (!audioBuffer || audioLength == 0 || !volumeCtrl) {
     dacWrite(AUDIO_DAC_PIN, 128);
     return;
   }
 
   if (index >= audioLength) index = 0;
-  dacWrite(AUDIO_DAC_PIN, audioBuffer[index]);
+  
+  // Process audio through volume control
+  uint8_t sample = volumeCtrl->processAudioSample(audioBuffer[index]);
+  dacWrite(AUDIO_DAC_PIN, sample);
+  
   index++;
 }
 
@@ -75,6 +80,9 @@ void IRAM_ATTR AudioPlayer::onTimerISR() {
 void AudioPlayer::begin() {
   dacWrite(AUDIO_DAC_PIN, 128);  // idle mid
   currentSampleRate = 8000;
+  
+  volumeControl.begin();
+  volumeCtrl = &volumeControl;  // Set static pointer for ISR access
 
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &AudioPlayer::onTimerISR, true);
@@ -117,12 +125,12 @@ bool AudioPlayer::loadFile(const char *path) {
 // Mulai playback audio dari awal buffer
 void AudioPlayer::startPlayback() {
   index = 0;
-  isMuted = false;
+  volumeControl.mute(false);
 }
 
 // Stop playback dan set DAC ke posisi idle (128)
 void AudioPlayer::stopPlayback() {
-  isMuted = true;
+  volumeControl.mute(true);
   dacWrite(AUDIO_DAC_PIN, 128);
 }
 
@@ -154,19 +162,18 @@ void AudioPlayer::updateSampleRateFromADC(int adcValue) {
 // Set status mute audio
 // true = mute, false = unmute
 void AudioPlayer::mute(bool m) {
-  isMuted = m;
+  volumeControl.mute(m);
 }
 
 // Toggle status mute (ON/OFF)
 void AudioPlayer::toggleMute() {
-  isMuted = !isMuted;
-  Serial.printf("🔇 Mute: %s\n", isMuted ? "ON" : "OFF");
+  volumeControl.toggleMute();
 }
 
 // Cek apakah audio sedang playing (tidak mute)
 // Return true jika playing, false jika mute
 bool AudioPlayer::isPlaying() {
-  return !isMuted;
+  return !volumeControl.isMuted();
 }
 
 uint32_t AudioPlayer::getSampleRate() {

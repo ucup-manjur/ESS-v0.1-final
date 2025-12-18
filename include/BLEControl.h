@@ -12,8 +12,8 @@
 #define CMD_REV_START        0x03
 #define CMD_REV_STOP         0x04
 #define CMD_VOL              0x11
-#define CMD_REQ_FILE_INFO    0x13
-#define CMD_REQ_FILE_LIST    0x14
+#define CMD_REQ_FILE_LIST    0x13
+#define CMD_REQ_FILE_INFO    0x14
 #define CMD_SET_AUDIO_PLAY   0x15
 
 // Command definitions untuk file transfer audio

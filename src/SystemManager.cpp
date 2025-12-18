@@ -1,4 +1,5 @@
 #include "SystemManager.h"
+#include "VolumeControl.h"
 
 SystemManager::SystemManager() {}
 
@@ -117,6 +118,8 @@ void SystemManager::handleBLECommands() {
   uint8_t cmd = ble.getCommand();
   uint8_t* data = ble.getCommandData();
   
+  Serial.printf("🔍 Processing BLE command: 0x%02X\n", cmd);
+  
   switch(cmd) {
     case CMD_GEAR_UP:
       // if (currentGear < 4) {
@@ -142,9 +145,16 @@ void SystemManager::handleBLECommands() {
       break;
       
     case CMD_VOL:
-      if (player && ble.getCommandDataLength() > 0) {
-        player->toggleMute();
-        Serial.printf("📱 BLE Volume: %d\n", data[0]);
+      Serial.printf("🔊 CMD_VOL received, data length: %d, value: %d\n", ble.getCommandDataLength(), data[0]);
+      if (ble.getCommandDataLength() > 0) {
+        if (data[0] == 0) {
+          volumeControl.toggleMute();
+          Serial.println("📱 BLE Toggle Mute");
+        } else {
+          volumeControl.mute(false);  // Unmute when setting volume
+          volumeControl.setVolume(data[0]);
+          Serial.printf("📱 BLE Set Volume: %d%%\n", data[0]);
+        }
       }
       break;
       
@@ -193,7 +203,15 @@ void SystemManager::handleBLECommands() {
       ble.sendStatus(currentMode);
       Serial.println("📱 BLE Status Request");
       break;
+      
+    default:
+      Serial.printf("⚠️ Unknown BLE command: 0x%02X\n", cmd);
+      break;
   }
+  
+  // Reset command data after processing
+  ble.getCommandData()[0] = 0;
+  // Note: commandDataLen will be reset on next command
 }
 
 void SystemManager::loadCurrentSound() {

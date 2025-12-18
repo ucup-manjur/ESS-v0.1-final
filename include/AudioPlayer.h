@@ -3,6 +3,8 @@
 #include <FS.h>
 #include <LittleFS.h>
 
+class VolumeControl;
+
 class AudioPlayer {
 public:
   AudioPlayer();
@@ -34,6 +36,6 @@ private:
   static uint8_t *audioBuffer;
   static uint32_t audioLength;
   static volatile uint32_t index;
-  static bool isMuted;
   static uint32_t currentSampleRate;
+  static VolumeControl* volumeCtrl;
 };
