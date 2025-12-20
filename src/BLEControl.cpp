@@ -163,22 +163,35 @@ size_t BLEControl::getCommandDataLength() {
   return commandDataLen;
 }
 
-void BLEControl::startFileTransfer() {
+void BLEControl::startFileTransfer(String filename) {
   if (fileReceiving) {
     cancelFileTransfer();
   }
   
   // Get current register from SystemManager to determine target folder
   String folderPath = getCurrentRegisterFolder();
+  
+  // Use register-based naming since app doesn't send filename yet
+  if (folderPath == "/Audio") originalFilename = "NinjaH2R.raw";
+  else if (folderPath == "/Audio1") originalFilename = "Ferrari_V8.raw";
+  else if (folderPath == "/Audio2") originalFilename = "BMW_I6.raw";
+  else originalFilename = "Lamborghini_V12.raw";
+  
+  // Create folder if not exists
+  if (!LittleFS.exists(folderPath)) {
+    LittleFS.mkdir(folderPath);
+    Serial.printf("📁 Created folder: %s\n", folderPath.c_str());
+  }
+  
   currentFilename = folderPath + "/upload.tmp";
   tmpFile = LittleFS.open(currentFilename, "w");
   
   if (tmpFile) {
     fileReceiving = true;
     receivedBytes = 0;
-    Serial.printf("📥 File transfer started -> %s\n", folderPath.c_str());
+    Serial.printf("📥 File transfer started -> %s (will save as %s)\n", currentFilename.c_str(), originalFilename.c_str());
   } else {
-    Serial.println("❌ Failed to create temp file");
+    Serial.printf("❌ Failed to create temp file: %s\n", currentFilename.c_str());
   }
 }
 
@@ -190,27 +203,38 @@ void BLEControl::writeFileData(const uint8_t* data, size_t len) {
 }
 
 void BLEControl::endFileTransfer() {
-  if (fileReceiving && tmpFile) {
-    tmpFile.close();
+  if (fileReceiving) {
+    if (tmpFile) {
+      tmpFile.close();
+    }
     fileReceiving = false;
     
-    // Rename upload.tmp to proper filename based on register
-    String folderPath = getCurrentRegisterFolder();
-    String finalFilename = folderPath + "/engine.raw";
-    
-    // Remove old file if exists
-    if (LittleFS.exists(finalFilename)) {
-      LittleFS.remove(finalFilename);
-    }
-    
-    // Rename temp file to final name
-    if (LittleFS.rename(currentFilename, finalFilename)) {
-      Serial.printf("✅ File saved: %s (%d bytes)\n", finalFilename.c_str(), receivedBytes);
+    if (receivedBytes > 0) {
+      // Use original filename
+      String folderPath = getCurrentRegisterFolder();
+      String finalFilename = folderPath + "/" + originalFilename;
+      
+      // Remove old file if exists
+      if (LittleFS.exists(finalFilename)) {
+        LittleFS.remove(finalFilename);
+      }
+      
+      // Rename temp file to final name
+      if (LittleFS.rename(currentFilename, finalFilename)) {
+        Serial.printf("✅ File saved: %s (%d bytes)\n", finalFilename.c_str(), receivedBytes);
+      } else {
+        Serial.printf("❌ Failed to rename: %s -> %s\n", currentFilename.c_str(), finalFilename.c_str());
+      }
     } else {
-      Serial.printf("❌ Failed to rename file: %s\n", finalFilename.c_str());
+      Serial.println("❌ No data received, removing temp file");
+      if (LittleFS.exists(currentFilename)) {
+        LittleFS.remove(currentFilename);
+      }
     }
     
     listAllAudioFiles();
+  } else {
+    Serial.println("⚠️ endFileTransfer called but not receiving");
   }
 }
 
@@ -243,14 +267,13 @@ void BLEControl::sendCurrentPlaying() {
     dir.close();
   }
   
-  String response = "0xBB," + title;
+  String response = "0xAA," + title;
   sendBLEResponse(response);
   Serial.printf("📡 Current playing: %s\n", title.c_str());
 }
 
 void BLEControl::replyFileList(uint8_t registerNum) {
-  String response = "0xBB,";
-  
+  // Send each register separately to avoid MTU issues
   for (int i = 0; i < 4; i++) {
     String folderPath = (i == 0) ? "/Audio" : "/Audio" + String(i);
     String title = "empty";
@@ -268,12 +291,11 @@ void BLEControl::replyFileList(uint8_t registerNum) {
       dir.close();
     }
     
-    response += "reg" + String(i + 1) + ":" + title;
-    if (i < 3) response += ",";
+    String response = "0xAA,reg" + String(i + 1) + ":" + title;
+    sendBLEResponse(response);
+    delay(50);  // Small delay between packets
+    Serial.printf("📡 File list sent: reg%d = %s\n", i + 1, title.c_str());
   }
-  
-  sendBLEResponse(response);
-  Serial.printf("📡 File list sent\n");
 }
 
 void BLEControl::setActiveFile(uint8_t index) {
@@ -405,7 +427,7 @@ void BLEControl::setCurrentRegister(uint8_t reg) {
 void BLEControl::sendStatus(uint8_t mode, uint8_t reg, bool playing) {
   if (pCharacteristic) {
     uint8_t status[4];
-    status[0] = 0xBB;  // Same as command protocol
+    status[0] = 0xAA;  // Same as command protocol
     status[1] = 0xFF;  // Status command
     status[2] = mode;  // 0=Normal, 1=Programming
     status[3] = status[1] ^ status[2];  // Checksum
@@ -418,9 +440,9 @@ void BLEControl::sendStatus(uint8_t mode, uint8_t reg, bool playing) {
 
 void BLEControl::sendBLEResponse(String response) {
   if (pCharacteristic) {
-    pCharacteristic->setValue(response.c_str());
+    pCharacteristic->setValue((uint8_t*)response.c_str(), response.length());
     pCharacteristic->notify();
-    Serial.printf("📡 BLE Response: %s\n", response.c_str());
+    Serial.printf("📡 BLE Response (%d bytes): %s\n", response.length(), response.c_str());
   }
 }
 

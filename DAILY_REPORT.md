@@ -7,25 +7,31 @@ Berhasil menyelesaikan sistem ESS dengan fitur lengkap: audio player, BLE contro
 
 ## 🔧 **PERBAIKAN UTAMA HARI INI**
 
-### **1. BLE Metadata System Enhancement** *(28 Des 2024)*
-- **Implementasi**: Dynamic filename reading dari folder register
-- **File List Response**: `0xDD,reg1:Ferrari_V8.raw,reg2:empty,reg3:BMW_I6.raw,reg4:Lamborghini_V12.raw`
-- **Current Playing**: `0xCC,Ferrari_V8.raw` (file yang sedang dimainkan)
-- **Real Filename**: Baca nama file .raw asli, bukan hardcoded "engine.raw"
+### **1. AudioEffects System Implementation & Debugging** *(29 Des 2024)*
+- **Dual Core Architecture**: Implementasi ADC task (Core 0) dan BLE task (Core 1)
+- **AudioEffects Integration**: Gear shift effects, rev limiter, auto shift logic
+- **Gear System**: 6-speed manual/auto dengan RPM-based shifting
+- **Rev Effects**: Smooth ramp up/down dengan sine curve transitions
 
-### **2. BLE Protocol Optimization** *(28 Des 2024)*
-- **JSON Metadata**: Struktur lengkap dengan title, file_size, duration, sample_rate, rpm_range, gear_count
-- **Simple Response**: Optimasi ke format sederhana dengan nama file saja
-- **Dynamic Detection**: Auto-detect file .raw pertama di setiap folder register
-- **Empty Handling**: Response "empty" untuk register kosong
+### **2. Performance Issues & Solutions** *(29 Des 2024)*
+- **Stuck System**: AudioEffects complexity menyebabkan deadlock dan stuck
+- **Dual Core Conflicts**: Shared resources antara cores menyebabkan timing issues
+- **Memory Corruption**: Static variables di logging functions
+- **BLE Response Delays**: Task delay terlalu lambat untuk rev yang cepat (200-300ms)
 
-### **3. File Management Flow Design** *(28 Des 2024)*
-- **Upload Flow**: CMD_FILE_START → CMD_FILE_DATA → CMD_FILE_END
-- **Filename Preservation**: File tetap pakai nama asli dari aplikasi
-- **Error Handling**: Cleanup temp file saat gagal upload
-- **Replace Logic**: File lama otomatis terganti dengan nama baru
+### **3. System Simplification** *(29 Des 2024)*
+- **Remove AudioEffects**: Kembali ke simple approach di SystemManager
+- **Direct Rev Logic**: Simple variables tanpa class overhead
+- **Responsive Rev**: Rev start/stop langsung responsif tanpa delay
+- **Clean Architecture**: Focus pada functionality, bukan abstraction
 
-### **4. Previous System Optimizations** *(27 Des 2024)*
+### **4. Previous Achievements** *(28 Des 2024)*
+- **BLE Metadata**: Dynamic filename reading dan JSON responses
+- **File Management**: Real filename preservation dan upload flow
+- **Protocol Optimization**: Split responses untuk avoid MTU issues
+- **Auto File Info**: Otomatis kirim info saat register berubah
+
+### **5. System Optimizations** *(27 Des 2024)*
 - **Audio Player**: Sample rate optimization dengan conditional update
 - **Throttle Input**: Responsif tanpa moving average filter
 - **Register System**: 4 level register dengan LED pattern
@@ -142,22 +148,37 @@ Berhasil menyelesaikan sistem ESS dengan fitur lengkap: audio player, BLE contro
 
 ## 🔍 **DETAIL TEKNIS**
 
-### **Perubahan Kode Utama** *(28 Des 2024)*
-1. **BLEControl.cpp**: 
-   - `replyFileList()`: Dynamic filename reading dari setiap folder register
-   - `sendCurrentPlaying()`: Kirim nama file yang sedang dimainkan
-   - `sendBLEResponse()`: Helper method untuk response formatting
-   - Real filename detection dengan scan folder .raw files
-2. **SystemManager.cpp**: Update method call `sendCurrentPlaying()`
-3. **BLEControl.h**: Method signature updates dan cleanup
-4. **Previous**: AudioPlayer, main.cpp, LEDManager optimizations
+### **Perubahan Kode Utama** *(29 Des 2024)*
+1. **main.cpp**: 
+   - Dual core task implementation dengan xTaskCreatePinnedToCore
+   - ADC smoothing dengan slope limiting (max 50 ADC units per update)
+   - Remove AudioEffects integration, kembali ke direct player control
+2. **SystemManager.cpp/h**: 
+   - Simple rev logic dengan direct variables (isRevving, revStartTime, etc)
+   - updateRev() method untuk handle rev ramp up/down
+   - Remove AudioEffects dependency, focus pada simplicity
+3. **AudioEffects.cpp/h**: Disabled - terlalu complex untuk real-time audio
+4. **Previous**: BLE metadata, file management, protocol optimization
 
-### **Bug Fixes** *(27 Des 2024)*
+### **Lessons Learned** *(29 Des 2024)*
+1. **Keep It Simple**: Complex abstraction layers menyebabkan timing issues
+2. **Real-time Audio**: Direct control lebih responsif dari state machines
+3. **Dual Core**: Shared resources harus minimal untuk avoid deadlock
+4. **Debug Approach**: Simple logging lebih efektif dari verbose debug
+5. **Performance vs Features**: Responsiveness > feature complexity
+
+### **Bug Fixes** *(29 Des 2024)*
+- ✅ AudioEffects system causing deadlock dan stuck
+- ✅ Rev effects tidak responsif karena dual core conflicts
+- ✅ BLE task delay terlalu lambat untuk fast rev (20ms → 5ms)
+- ✅ Memory corruption dari static variables di logging
+- ✅ Throttle input override rev effects
+
+### **Previous Bug Fixes** *(27-28 Des 2024)*
 - ✅ Potentiometer stuck di nilai maksimal
 - ✅ Moving average filter menyebabkan lag
-- ✅ LED tidak menyala setelah pause-play
 - ✅ File transfer tidak sesuai register
-- ✅ Format LittleFS terlalu mudah diakses
+- ✅ BLE response truncation issues
 
 ### **Performance Improvements** *(27 Des 2024)*
 - ✅ CPU usage berkurang dengan conditional timer update
@@ -167,6 +188,6 @@ Berhasil menyelesaikan sistem ESS dengan fitur lengkap: audio player, BLE contro
 
 ---
 
-**Tanggal**: 28 Desember 2024 - BLE Metadata & File Management Enhancement  
+**Tanggal**: 29 Desember 2024 - AudioEffects Implementation & System Simplification  
 **Developer**: Amazon Q  
-**Status**: ENHANCED ✅
+**Status**: SIMPLIFIED & OPTIMIZED ✅

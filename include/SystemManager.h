@@ -15,11 +15,34 @@ public:
   SystemManager();
   void begin(AudioPlayer* audioPlayer = nullptr);
   void update();
+  void setCurrentThrottleRate(uint32_t rate) { currentThrottleRate = rate; }
+  bool isRevActive() { return isRevving || isRevDown; }
+  bool isShiftActive() { return isShifting; }
   
 private:
   AudioPlayer* player;
+  
+  // Simple rev variables
+  bool isRevving = false;
+  bool isRevDown = false;
+  unsigned long revStartTime = 0;
+  unsigned long revDownStartTime = 0;
+  uint32_t prevNormalRate = 8000;
+  uint32_t currentThrottleRate = 8000;  // Track current throttle
+  const uint32_t revTargetRate = 39000;  // Match original
+  const unsigned long revRampDuration = 300;  // Match original
+  const unsigned long revDownDuration = 400;
+  
+  // Simple shift variables
+  bool isShifting = false;
+  unsigned long shiftStartTime = 0;
+  uint32_t shiftBaseRate = 8000;
+  uint8_t shiftPhase = 0;  // 0=turun, 1=mengejar
+  
+  uint8_t currentGear = 0;
+  const uint8_t maxGear = 4;
   ButtonManager buttons;
-  LEDManager leds;
+  LEDManager leds; 
   BLEControl ble;
   
   SystemMode currentMode = MODE_NORMAL;
@@ -35,5 +58,12 @@ private:
   void exitProgrammingMode();
   void loadCurrentSound();
   void formatLittleFS();
+  void startRev();
+  void stopRev();
+  void updateRev();
+  void triggerShift();
+  void triggerGearUp();
+  void triggerGearDown();
+  void updateShift();
 
 };

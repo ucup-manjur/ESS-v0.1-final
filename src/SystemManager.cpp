@@ -19,6 +19,13 @@ void SystemManager::update() {
   leds.update();
   ble.update();
   
+  // Only update effects when needed
+  if (isRevving || isRevDown) {
+    updateRev();
+  } else if (isShifting) {
+    updateShift();
+  }
+  
   handleBLECommands();
   
   if (currentMode == MODE_NORMAL) {
@@ -74,6 +81,7 @@ void SystemManager::switchRegister() {
   
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
+  ble.sendCurrentPlaying();  // Auto-send current file info
   Serial.printf("📍 Register: %d\n", currentRegister);
   
   if (currentMode == MODE_NORMAL && isPlaying) {
@@ -122,25 +130,22 @@ void SystemManager::handleBLECommands() {
   
   switch(cmd) {
     case CMD_GEAR_UP:
-      // if (currentGear < 4) {
-      //   currentGear++;
-      //   Serial.printf("📱 Manual Gear Up: %d\n", currentGear);
-      // }
-        Serial.printf("📱 Manual Gear Up");
+      triggerGearUp();
+      Serial.println("📱 BLE Gear Up");
       break;
       
     case CMD_GEAR_DOWN:
-      // if (currentGear > 0) {
-      //   currentGear--;
-      //   Serial.printf("📱 Manual Gear Down: %d\n", currentGear);
-      // }
-        Serial.printf("📱 Manual Gear Down");
+      triggerGearDown();
+      Serial.println("📱 BLE Gear Down");
       break;
+      
     case CMD_REV_START:
+      startRev();
       Serial.println("📱 BLE Rev Start");
       break;
       
     case CMD_REV_STOP:
+      stopRev();
       Serial.println("📱 BLE Rev Stop");
       break;
       
@@ -163,6 +168,7 @@ void SystemManager::handleBLECommands() {
         currentRegister = data[0];
         leds.setRegister(currentRegister);
         ble.setCurrentRegister(currentRegister);
+        ble.sendCurrentPlaying();  // Auto-send current file info
         if (isPlaying) {
           loadCurrentSound();
         } else {
@@ -173,6 +179,10 @@ void SystemManager::handleBLECommands() {
         }
         Serial.printf("📱 BLE Set Audio Play: Register %d\n", currentRegister);
       }
+      break;
+      
+    case CMD_TOGGLE_AUTO_SHIFT:
+      Serial.println("📱 Auto Shift (disabled)");
       break;
       
     case CMD_REQ_FILE_INFO:
@@ -240,17 +250,130 @@ void SystemManager::loadCurrentSound() {
     folderPath = "/Audio" + String(currentRegister - 1);
   }
   
-  String filename = folderPath + "/engine.raw";
+  // Find first .raw file in folder
+  String filename = "";
+  File dir = LittleFS.open(folderPath);
+  if (dir && dir.isDirectory()) {
+    File file = dir.openNextFile();
+    while (file) {
+      if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
+        filename = folderPath + "/" + file.name();
+        break;
+      }
+      file = dir.openNextFile();
+    }
+    dir.close();
+  }
   
-  if (player->loadFile(filename.c_str())) {
+  if (filename != "" && player->loadFile(filename.c_str())) {
     player->startPlayback();
     Serial.printf("✅ Loaded: %s\n", filename.c_str());
   } else {
-    Serial.printf("⚠️ File tidak ada: %s\n", filename.c_str());
+    Serial.printf("⚠️ File tidak ada di: %s\n", folderPath.c_str());
   }
 }
 
 void SystemManager::formatLittleFS() {
   Serial.println("🚨 TOMBOL 3 DITEKAN 5 DETIK - FORMAT LITTLEFS!");
   ble.formatLittleFS();
+}
+
+void SystemManager::startRev() {
+  if (!isRevving && player) {
+    isRevving = true;
+    revStartTime = millis();
+    prevNormalRate = currentThrottleRate;  // Save current throttle position
+    Serial.printf("🔊 Rev start! T=%lu, From: %d Hz\n", revStartTime, prevNormalRate);
+  }
+}
+
+void SystemManager::stopRev() {
+  if (isRevving) {
+    isRevving = false;
+    isRevDown = true;
+    revDownStartTime = millis();
+    Serial.printf("⛔ Rev down start: %d -> %d Hz\n", revTargetRate, prevNormalRate);
+  }
+}
+
+void SystemManager::triggerShift() {
+  if (!isShifting && !isRevving && player) {
+    shiftBaseRate = currentThrottleRate;
+    shiftPhase = 0;  // Start phase 0: turun sedikit
+    shiftStartTime = millis();
+    isShifting = true;
+    Serial.printf("⚙️ Gear shift start! Base: %d Hz\n", shiftBaseRate);
+  }
+}
+
+void SystemManager::triggerGearUp() {
+  if (currentGear < maxGear && !isShifting && !isRevving) {
+    currentGear++;
+    triggerShift();
+    Serial.printf("⬆️ Gear UP -> %d\n", currentGear);
+  } else if (currentGear >= maxGear) {
+    Serial.printf("⚠️ Max gear (%d)\n", maxGear);
+  }
+}
+
+void SystemManager::triggerGearDown() {
+  if (currentGear > 1 && !isShifting && !isRevving) {
+    currentGear--;
+    triggerShift();
+    Serial.printf("⬇️ Gear DOWN -> %d\n", currentGear);
+  } else if (currentGear <= 1) {
+    Serial.println("⚠️ Min gear (1)");
+  }
+}
+
+void SystemManager::updateRev() {
+  if (!player) return;
+  
+  if (isRevving) {
+    unsigned long elapsed = millis() - revStartTime;
+    if (elapsed >= revRampDuration) {
+      player->setSampleRate(revTargetRate);
+    } else {
+      float progress = (float)elapsed / revRampDuration;
+      uint32_t newRate = prevNormalRate + (revTargetRate - prevNormalRate) * progress;
+      player->setSampleRate(newRate);
+    }
+  } else if (isRevDown) {
+    unsigned long elapsed = millis() - revDownStartTime;
+    if (elapsed < revDownDuration) {
+      float progress = (float)elapsed / revDownDuration;
+      uint32_t blendedRate = revTargetRate - (revTargetRate - prevNormalRate) * progress;
+      player->setSampleRate(blendedRate);
+    } else {
+      player->setSampleRate(prevNormalRate);
+      isRevDown = false;
+      Serial.println("✅ Turun selesai, balik idle");
+    }
+  }
+}
+
+void SystemManager::updateShift() {
+  if (!player || !isShifting) return;
+  
+  unsigned long elapsed = millis() - shiftStartTime;
+  uint32_t newRate = shiftBaseRate;
+  
+  if (shiftPhase == 0) {  // Turun sedikit
+    newRate = shiftBaseRate - 1500;
+    if (elapsed >= 150) {
+      shiftPhase = 1;
+      shiftStartTime = millis();
+    }
+  } else if (shiftPhase == 1) {  // Naik mengejar throttle
+    float progress = (float)elapsed / 200.0f;
+    if (progress >= 1.0f) {
+      isShifting = false;
+      newRate = currentThrottleRate;
+      Serial.println("✅ Shift complete");
+    } else {
+      newRate = (shiftBaseRate - 1500) + ((currentThrottleRate - (shiftBaseRate - 1500)) * progress);
+    }
+  }
+  
+  player->setSampleRate(newRate);
 }

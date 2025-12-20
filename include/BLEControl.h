@@ -15,6 +15,8 @@
 #define CMD_REQ_FILE_LIST    0x13
 #define CMD_REQ_FILE_INFO    0x14
 #define CMD_SET_AUDIO_PLAY   0x15
+#define CMD_TOGGLE_AUTO_SHIFT 0x16
+#define CMD_REQ_STATUS       0xFF
 
 // Command definitions untuk file transfer audio
 #define CMD_FILE_START       0x20
@@ -22,7 +24,6 @@
 #define CMD_FILE_END         0x22
 #define CMD_DELETE_FILE      0x23
 #define CMD_DELETE_FOLDER    0x24
-#define CMD_REQ_STATUS       0x25
 
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
@@ -40,7 +41,7 @@ public:
   uint8_t* getCommandData();
   size_t getCommandDataLength();
   
-  void startFileTransfer();
+  void startFileTransfer(String filename = "");
   void writeFileData(const uint8_t* data, size_t len);
   void endFileTransfer();
   void cancelFileTransfer();
@@ -72,6 +73,7 @@ private:
   bool fileReceiving = false;
   size_t receivedBytes = 0;
   String currentFilename;
+  String originalFilename;
   File tmpFile;
   uint8_t currentRegister = 1;
   
