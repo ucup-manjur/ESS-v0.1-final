@@ -364,14 +364,14 @@ void SystemManager::updateShift() {
       shiftPhase = 1;
       shiftStartTime = millis();
     }
-  } else if (shiftPhase == 1) {  // Naik mengejar throttle
+  } else if (shiftPhase == 1) {  // Naik mengejar throttle FIXED
     float progress = (float)elapsed / 200.0f;
     if (progress >= 1.0f) {
       isShifting = false;
-      newRate = currentThrottleRate;
+      newRate = shiftBaseRate;  // Kembali ke rate awal, bukan currentThrottleRate
       Serial.println("✅ Shift complete");
     } else {
-      newRate = (shiftBaseRate - 1500) + ((currentThrottleRate - (shiftBaseRate - 1500)) * progress);
+      newRate = (shiftBaseRate - 1500) + ((shiftBaseRate - (shiftBaseRate - 1500)) * progress);
     }
   }
   
