@@ -15,9 +15,13 @@ void SystemManager::begin(AudioPlayer* audioPlayer) {
 }
 
 void SystemManager::update() {
+  updateButtons();
+  updateLEDs();
+  updateBLE();
+}
+
+void SystemManager::updateButtons() {
   buttons.update();
-  leds.update();
-  ble.update();
   
   // Only update effects when needed
   if (isRevving || isRevDown) {
@@ -26,13 +30,20 @@ void SystemManager::update() {
     updateShift();
   }
   
-  handleBLECommands();
-  
   if (currentMode == MODE_NORMAL) {
     handleNormalMode();
   } else {
     handleProgrammingMode();
   }
+}
+
+void SystemManager::updateBLE() {
+  ble.update();
+  handleBLECommands();
+}
+
+void SystemManager::updateLEDs() {
+  leds.update();
 }
 
 void SystemManager::handleNormalMode() {
@@ -70,8 +81,21 @@ void SystemManager::handleProgrammingMode() {
     // Handle button C short press in programming mode
   }
   
-  if (buttons.isButtonCLongPress()) {
-    formatLittleFS();
+  // Button C timing with LED feedback
+  unsigned long cPressTime = buttons.getButtonCPressTime();
+  if (cPressTime > 0) {
+    // LED feedback during press
+    if (cPressTime >= 6000) {
+      leds.setAllOn();  // All LEDs = delete all files
+      deleteAllFiles();
+    } else if (cPressTime >= 3000) {
+      leds.setRegister(currentRegister);  // Current register LED = delete current
+      if (cPressTime < 6000) {  // Only delete current if not reaching 6s
+        deleteCurrentRegisterFile();
+      }
+    } else if (cPressTime >= 1000) {
+      leds.setAllBlink();  // Blinking = warning, getting ready
+    }
   }
 }
 
@@ -108,7 +132,11 @@ void SystemManager::enterProgrammingMode() {
   leds.setBlinkMode(true);
   ble.enableFileTransfer(true);
   ble.sendStatus(currentMode);
-  Serial.println("🛠️ Programming Mode");
+  
+  // Mute audio in programming mode
+  volumeControl.mute(true);
+  
+  Serial.println("🛠️ Programming Mode - Audio muted");
 }
 
 void SystemManager::exitProgrammingMode() {
@@ -117,7 +145,11 @@ void SystemManager::exitProgrammingMode() {
   leds.setRegister(currentRegister);
   ble.enableFileTransfer(false);
   ble.sendStatus(currentMode);
-  Serial.println("🎮 Normal Mode");
+  
+  // Unmute audio when exiting programming mode
+  volumeControl.mute(false);
+  
+  Serial.println("🎮 Normal Mode - Audio restored");
 }
 
 void SystemManager::handleBLECommands() {
@@ -156,9 +188,13 @@ void SystemManager::handleBLECommands() {
           volumeControl.toggleMute();
           Serial.println("📱 BLE Toggle Mute");
         } else {
-          volumeControl.mute(false);  // Unmute when setting volume
+          // Don't unmute in programming mode
+          if (currentMode == MODE_NORMAL) {
+            volumeControl.mute(false);  // Unmute when setting volume
+          }
           volumeControl.setVolume(data[0]);
-          Serial.printf("📱 BLE Set Volume: %d%%\n", data[0]);
+          Serial.printf("📱 BLE Set Volume: %d%% (Mode: %s)\n", data[0], 
+                       currentMode == MODE_PROGRAMMING ? "Programming" : "Normal");
         }
       }
       break;
@@ -242,6 +278,12 @@ void SystemManager::handleBLECommands() {
 void SystemManager::loadCurrentSound() {
   if (!player) return;
   
+  // Don't load sound in programming mode
+  if (currentMode == MODE_PROGRAMMING) {
+    Serial.println("⚠️ Cannot load sound in programming mode");
+    return;
+  }
+  
   // Mapping register ke folder: 1=/Audio, 2=/Audio1, 3=/Audio2, 4=/Audio3
   String folderPath;
   if (currentRegister == 1) {
@@ -278,6 +320,67 @@ void SystemManager::formatLittleFS() {
   ble.formatLittleFS();
 }
 
+void SystemManager::deleteCurrentRegisterFile() {
+  // Stop playback to close file handles
+  if (player) {
+    player->stopPlayback();
+  }
+  
+  String folderPath;
+  if (currentRegister == 1) {
+    folderPath = "/Audio";
+  } else {
+    folderPath = "/Audio" + String(currentRegister - 1);
+  }
+  
+  File dir = LittleFS.open(folderPath);
+  if (dir && dir.isDirectory()) {
+    File file = dir.openNextFile();
+    while (file) {
+      if (!file.isDirectory()) {
+        String filePath = folderPath + "/" + file.name();
+        file.close();  // Close file handle before delete
+        LittleFS.remove(filePath);
+        Serial.printf("🗑️ Deleted: %s\n", filePath.c_str());
+      }
+      file = dir.openNextFile();
+    }
+    dir.close();
+  }
+  Serial.printf("✅ Register %d files deleted\n", currentRegister);
+}
+
+void SystemManager::deleteAllFiles() {
+  // Stop playback to close file handles
+  if (player) {
+    player->stopPlayback();
+  }
+  
+  for (int reg = 1; reg <= 4; reg++) {
+    String folderPath;
+    if (reg == 1) {
+      folderPath = "/Audio";
+    } else {
+      folderPath = "/Audio" + String(reg - 1);
+    }
+    
+    File dir = LittleFS.open(folderPath);
+    if (dir && dir.isDirectory()) {
+      File file = dir.openNextFile();
+      while (file) {
+        if (!file.isDirectory()) {
+          String filePath = folderPath + "/" + file.name();
+          file.close();  // Close file handle before delete
+          LittleFS.remove(filePath);
+        }
+        file = dir.openNextFile();
+      }
+      dir.close();
+    }
+  }
+  Serial.println("✅ All files deleted (folders preserved)");
+}
+
 void SystemManager::startRev() {
   if (!isRevving && player) {
     isRevving = true;
@@ -299,10 +402,11 @@ void SystemManager::stopRev() {
 void SystemManager::triggerShift() {
   if (!isShifting && !isRevving && player) {
     shiftBaseRate = currentThrottleRate;
-    shiftPhase = 0;  // Start phase 0: turun sedikit
+    shiftTargetRate = (uint32_t)(currentThrottleRate * 1.3f);  // 130% dari rate saat ini (gear up)
     shiftStartTime = millis();
     isShifting = true;
-    Serial.printf("⚙️ Gear shift start! Base: %d Hz\n", shiftBaseRate);
+    shiftPhase = 0;  // Reset phase
+    Serial.printf("⚙️ Gear shift start! %d -> %d Hz (30%% up)\n", shiftBaseRate, shiftTargetRate);
   }
 }
 
@@ -358,20 +462,23 @@ void SystemManager::updateShift() {
   unsigned long elapsed = millis() - shiftStartTime;
   uint32_t newRate = shiftBaseRate;
   
-  if (shiftPhase == 0) {  // Turun sedikit
-    newRate = shiftBaseRate - 1500;
-    if (elapsed >= 150) {
+  if (shiftPhase == 0) {  // Rise to target (150ms)
+    if (elapsed < 150) {
+      float progress = (float)elapsed / 150.0f;
+      newRate = shiftBaseRate + (shiftTargetRate - shiftBaseRate) * progress;
+    } else {
       shiftPhase = 1;
       shiftStartTime = millis();
+      newRate = shiftTargetRate;
     }
-  } else if (shiftPhase == 1) {  // Naik mengejar throttle FIXED
-    float progress = (float)elapsed / 200.0f;
-    if (progress >= 1.0f) {
-      isShifting = false;
-      newRate = shiftBaseRate;  // Kembali ke rate awal, bukan currentThrottleRate
-      Serial.println("✅ Shift complete");
+  } else if (shiftPhase == 1) {  // Recovery to base rate (200ms)
+    if (elapsed < 200) {
+      float progress = (float)elapsed / 200.0f;
+      newRate = shiftTargetRate - (shiftTargetRate - shiftBaseRate) * progress;
     } else {
-      newRate = (shiftBaseRate - 1500) + ((shiftBaseRate - (shiftBaseRate - 1500)) * progress);
+      isShifting = false;
+      newRate = shiftBaseRate;  // Kembali ke rate awal
+      Serial.println("✅ Shift complete");
     }
   }
   

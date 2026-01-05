@@ -79,6 +79,17 @@ void LEDManager::setAllOff() {
   digitalWrite(LED_3_PIN, HIGH);
 }
 
+void LEDManager::setAllOn() {
+  digitalWrite(LED_1_PIN, LOW);
+  digitalWrite(LED_2_PIN, LOW);
+  digitalWrite(LED_3_PIN, LOW);
+}
+
+void LEDManager::setAllBlink() {
+  blinkMode = true;
+  currentRegister = 4;  // Use register 4 pattern for all blink
+}
+
 void LEDManager::setBlinkMode(bool enable) {
   blinkMode = enable;
   if (!enable) {

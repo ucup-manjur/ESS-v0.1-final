@@ -9,6 +9,8 @@ public:
   
   void setRegister(uint8_t reg);
   void setAllOff();
+  void setAllOn();
+  void setAllBlink();
   void setBlinkMode(bool enable);
   
 private:

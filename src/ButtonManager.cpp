@@ -129,3 +129,11 @@ bool ButtonManager::isButtonBLongPress() {
 bool ButtonManager::isButtonCLongPress() {
   return getAndClearFlag(btnC_longPressed);
 }
+
+unsigned long ButtonManager::getButtonCPressTime() {
+  if (btnC_lastState == LOW) {
+    unsigned long now = millis();
+    return (now >= btnC_pressStart) ? (now - btnC_pressStart) : (ULONG_MAX - btnC_pressStart + now + 1);
+  }
+  return 0;
+}

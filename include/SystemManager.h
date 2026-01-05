@@ -15,6 +15,9 @@ public:
   SystemManager();
   void begin(AudioPlayer* audioPlayer = nullptr);
   void update();
+  void updateButtons();
+  void updateBLE();
+  void updateLEDs();
   void setCurrentThrottleRate(uint32_t rate) { currentThrottleRate = rate; }
   bool isRevActive() { return isRevving || isRevDown; }
   bool isShiftActive() { return isShifting; }
@@ -37,7 +40,8 @@ private:
   bool isShifting = false;
   unsigned long shiftStartTime = 0;
   uint32_t shiftBaseRate = 8000;
-  uint8_t shiftPhase = 0;  // 0=turun, 1=mengejar
+  uint32_t shiftTargetRate = 8000;
+  uint8_t shiftPhase = 0;  // 0=drop, 1=recovery
   
   uint8_t currentGear = 0;
   const uint8_t maxGear = 4;
@@ -58,6 +62,8 @@ private:
   void exitProgrammingMode();
   void loadCurrentSound();
   void formatLittleFS();
+  void deleteCurrentRegisterFile();
+  void deleteAllFiles();
   void startRev();
   void stopRev();
   void updateRev();

@@ -12,6 +12,7 @@ public:
   bool isButtonCPressed();
   bool isButtonBLongPress();
   bool isButtonCLongPress();
+  unsigned long getButtonCPressTime();
   
 private:
   bool getAndClearFlag(volatile bool &flag);

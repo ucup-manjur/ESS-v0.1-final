@@ -3,6 +3,7 @@
 #include "config.h"
 #include "AudioPlayer.h"
 #include "SystemManager.h"
+#include "OBD2Control.h"
 
 AudioPlayer player;
 SystemManager sysManager;
@@ -37,13 +38,18 @@ void setup() {
   player.begin();
   sysManager.begin(&player);
   
-  // Create tasks on different cores
+  // Initialize OBD2 system
+  // obd2.begin();
+  // obd2.startTask();
+  // Serial.println("✅ OBD2 system initialized");
+  
+  // Create tasks with adjusted priorities
   xTaskCreatePinnedToCore(
     ADCTask,           // Task function
     "ADC_Task",        // Task name
     4096,              // Stack size
     NULL,              // Parameters
-    2,                 // Priority (higher = more priority)
+    1,                 // Priority (reduced from 2)
     &ADCTaskHandle,    // Task handle
     0                  // Core 0
   );
@@ -53,34 +59,40 @@ void setup() {
     "BLE_Task",        // Task name
     8192,              // Stack size (larger for BLE)
     NULL,              // Parameters
-    1,                 // Priority (lower than ADC)
+    2,                 // Priority (increased from 1)
     &BLETaskHandle,    // Task handle
     1                  // Core 1
   );
   
   Serial.println("✅ Dual core tasks started");
-  Serial.println("   ADC Task -> Core 0 (Priority 2)");
-  Serial.println("   BLE Task -> Core 1 (Priority 1)");
+  Serial.println("   ADC Task -> Core 0 (Priority 1)");
+  Serial.println("   BLE Task -> Core 1 (Priority 2)");
 }
 
-// ADC Task - Core 0
+// ADC + Button Task - Core 0
 void ADCTask(void* parameter) {
   static unsigned long lastUpdate = 0;
   static int lastRaw = 0;
   static int smoothedRaw = 0;
   
+  // Configurable ADC slope limiting
+  static int adcSlopeLimit = 200;
+  
   for(;;) {
     unsigned long now = millis();
+    
+    // Handle buttons first (higher priority)
+    sysManager.updateButtons();
     
     // Throttle input update every 30ms for smoother response
     if (now - lastUpdate >= 30) {
       int raw = analogRead(THROTTLE_ADC_PIN);
       
-      // Smooth the ADC reading with slope limiting
+      // Smooth the ADC reading with configurable slope limiting
       int diff = raw - smoothedRaw;
-      if (abs(diff) > 50) {
+      if (abs(diff) > adcSlopeLimit) {
         // Limit big jumps - apply slope
-        smoothedRaw += (diff > 0) ? 50 : -50;
+        smoothedRaw += (diff > 0) ? adcSlopeLimit : -adcSlopeLimit;
       } else {
         smoothedRaw = raw;
       }
@@ -92,26 +104,25 @@ void ADCTask(void* parameter) {
         lastRaw = smoothedRaw;
       }
       
-      // Always update throttle rate for rev system
+      // Use ADC as throttle input - back to 44.1kHz
       uint32_t throttleRate = map(smoothedRaw, 0, 4095, 8000, 44100);
       sysManager.setCurrentThrottleRate(throttleRate);
-      
-      // Direct player control - but not during rev or shift
       if (!sysManager.isRevActive() && !sysManager.isShiftActive()) {
         player.updateSampleRateFromADC(smoothedRaw);
       }
       lastUpdate = now;
     }
     
-    vTaskDelay(10 / portTICK_PERIOD_MS);  // 10ms delay
+    vTaskDelay(5 / portTICK_PERIOD_MS);  // Reduced delay for better button response
   }
 }
 
-// BLE Task - Core 1
 void BLETask(void* parameter) {
   for(;;) {
-    sysManager.update();
-    vTaskDelay(1 / portTICK_PERIOD_MS);  // 1ms delay for fastest response
+    // Only handle BLE and LED updates
+    sysManager.updateBLE();
+    sysManager.updateLEDs();
+    vTaskDelay(10 / portTICK_PERIOD_MS);  // Increased delay since buttons moved to Core 0
   }
 }
 
