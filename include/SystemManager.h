@@ -63,7 +63,6 @@ private:
   void loadCurrentSound();
   void formatLittleFS();
   void deleteCurrentRegisterFile();
-  void deleteAllFiles();
   void startRev();
   void stopRev();
   void updateRev();

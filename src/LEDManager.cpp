@@ -34,8 +34,38 @@ void LEDManager::begin() {
 
 
 void LEDManager::update() {
+  unsigned long now = millis();
+  
+  // Handle fast blink mode (priority over normal blink)
+  if (fastBlinkMode) {
+    if (now - fastBlinkStart >= fastBlinkDuration) {
+      // Fast blink duration expired, return to normal mode
+      fastBlinkMode = false;
+      if (blinkMode) {
+        // Return to programming mode blink
+        setBlinkMode(true);
+      } else {
+        // Return to register display
+        setRegister(currentRegister);
+      }
+    } else {
+      // Fast blink active
+      if (now - lastBlink >= FAST_BLINK_INTERVAL) {
+        blinkState = !blinkState;
+        lastBlink = now;
+        
+        if (blinkState) {
+          setAllOn();
+        } else {
+          setAllOff();
+        }
+      }
+    }
+    return;
+  }
+  
+  // Normal blink mode (programming mode)
   if (blinkMode) {
-    unsigned long now = millis();
     if (now - lastBlink >= BLINK_INTERVAL) {
       blinkState = !blinkState;
       lastBlink = now;
@@ -88,6 +118,14 @@ void LEDManager::setAllOn() {
 void LEDManager::setAllBlink() {
   blinkMode = true;
   currentRegister = 4;  // Use register 4 pattern for all blink
+}
+
+void LEDManager::setFastBlink(unsigned long duration) {
+  fastBlinkMode = true;
+  fastBlinkStart = millis();
+  fastBlinkDuration = duration;
+  blinkState = false;
+  lastBlink = millis();
 }
 
 void LEDManager::setBlinkMode(bool enable) {

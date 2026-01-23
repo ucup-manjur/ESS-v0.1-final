@@ -12,6 +12,7 @@ public:
   void setAllOn();
   void setAllBlink();
   void setBlinkMode(bool enable);
+  void setFastBlink(unsigned long duration);
   
 private:
   uint8_t currentRegister = 1;
@@ -19,4 +20,10 @@ private:
   bool blinkState = false;
   unsigned long lastBlink = 0;
   const unsigned long BLINK_INTERVAL = 500;
+  
+  // Fast blink for notifications
+  bool fastBlinkMode = false;
+  unsigned long fastBlinkStart = 0;
+  unsigned long fastBlinkDuration = 0;
+  const unsigned long FAST_BLINK_INTERVAL = 150;
 };

@@ -1,4 +1,5 @@
 #include "BLEControl.h"
+#include "OBD2Control.h"
 
 const int MAX_GEAR = 4;
 const int MIN_GEAR = 0;
@@ -171,11 +172,8 @@ void BLEControl::startFileTransfer(String filename) {
   // Get current register from SystemManager to determine target folder
   String folderPath = getCurrentRegisterFolder();
   
-  // Use register-based naming since app doesn't send filename yet
-  if (folderPath == "/Audio") originalFilename = "NinjaH2R.raw";
-  else if (folderPath == "/Audio1") originalFilename = "Ferrari_V8.raw";
-  else if (folderPath == "/Audio2") originalFilename = "BMW_I6.raw";
-  else originalFilename = "Lamborghini_V12.raw";
+  // Use generic filename - same for all registers
+  originalFilename = "engine.raw";
   
   // Create folder if not exists
   if (!LittleFS.exists(folderPath)) {
@@ -478,4 +476,51 @@ void BLEControl::formatLittleFS() {
   } else {
     Serial.println("❌ Failed to format LittleFS");
   }
+}
+
+void BLEControl::sendOBD2Status() {
+  if (!pCharacteristic) return;
+  uint8_t status = obd2.isConnected() ? 1 : 0;
+  pCharacteristic->setValue(&status, 1);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 Status: %d\n", status);
+}
+
+void BLEControl::sendOBD2SOH() {
+  if (!pCharacteristic) return;
+  uint8_t soh = obd2.getStateOfHealth();
+  pCharacteristic->setValue(&soh, 1);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 SoH: %d%%\n", soh);
+}
+
+void BLEControl::sendOBD2Temp() {
+  if (!pCharacteristic) return;
+  int8_t temp = obd2.getBatteryTemp();
+  pCharacteristic->setValue((uint8_t*)&temp, 1);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 Temp: %d°C\n", temp);
+}
+
+void BLEControl::sendOBD2Steering() {
+  if (!pCharacteristic) return;
+  int16_t steering = obd2.getSteeringAngle();
+  pCharacteristic->setValue((uint8_t*)&steering, 2);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 Steering: %d°\n", steering);
+}
+
+void BLEControl::sendOBD2Power() {
+  if (!pCharacteristic) return;
+#ifdef USE_HV_BATTERY_POWER
+  uint16_t power = obd2.getHVBatteryPower();
+  pCharacteristic->setValue((uint8_t*)&power, 2);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 Power: %d W\n", power);
+#else
+  uint16_t rpm = obd2.getRPM();
+  pCharacteristic->setValue((uint8_t*)&rpm, 2);
+  pCharacteristic->notify();
+  Serial.printf("📡 OBD2 RPM: %d\n", rpm);
+#endif
 }

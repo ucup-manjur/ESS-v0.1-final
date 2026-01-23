@@ -18,6 +18,13 @@
 #define CMD_TOGGLE_AUTO_SHIFT 0x16
 #define CMD_REQ_STATUS       0xFF
 
+// OBD2 command definitions
+#define CMD_REQ_OBD2_STATUS  0x30
+#define CMD_REQ_OBD2_SOH     0x31
+#define CMD_REQ_OBD2_TEMP    0x32
+#define CMD_REQ_OBD2_STEERING 0x33
+#define CMD_REQ_OBD2_POWER   0x34
+
 // Command definitions untuk file transfer audio
 #define CMD_FILE_START       0x20
 #define CMD_FILE_DATA        0x21
@@ -60,6 +67,11 @@ public:
   String getCurrentRegisterFolder();
   void sendStatus(uint8_t mode, uint8_t reg = 0, bool playing = false);
   void sendBLEResponse(String response);
+  void sendOBD2Status();
+  void sendOBD2SOH();
+  void sendOBD2Temp();
+  void sendOBD2Steering();
+  void sendOBD2Power();
   
 private:
   static NimBLECharacteristic* pCharacteristic;

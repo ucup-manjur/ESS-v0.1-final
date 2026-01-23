@@ -81,21 +81,19 @@ void SystemManager::handleProgrammingMode() {
     // Handle button C short press in programming mode
   }
   
-  // Button C timing with LED feedback
+  // Button C timing: 3s = delete current register file only
+  static bool deleteExecuted = false;
   unsigned long cPressTime = buttons.getButtonCPressTime();
-  if (cPressTime > 0) {
-    // LED feedback during press
-    if (cPressTime >= 6000) {
-      leds.setAllOn();  // All LEDs = delete all files
-      deleteAllFiles();
-    } else if (cPressTime >= 3000) {
-      leds.setRegister(currentRegister);  // Current register LED = delete current
-      if (cPressTime < 6000) {  // Only delete current if not reaching 6s
-        deleteCurrentRegisterFile();
-      }
-    } else if (cPressTime >= 1000) {
-      leds.setAllBlink();  // Blinking = warning, getting ready
-    }
+  
+  if (cPressTime == 0) {
+    // Button released, reset flag
+    deleteExecuted = false;
+  } else if (cPressTime >= 3000 && !deleteExecuted) {
+    // Execute delete only once
+    deleteCurrentRegisterFile();
+    deleteExecuted = true;
+  } else if (cPressTime >= 1000) {
+    leds.setAllBlink();  // Blinking = warning, getting ready
   }
 }
 
@@ -248,21 +246,34 @@ void SystemManager::handleBLECommands() {
       }
       break;
       
-    case CMD_DELETE_FOLDER:
-      if (ble.getCommandDataLength() > 0) {
-        const char* folders[] = {"", "/audio/engine", "/audio/shift", "/audio/effects"};
-        if (data[0] >= 1 && data[0] <= 3) {
-          ble.deleteFolder(folders[data[0]]);
-          // ble.createAudioFolders(); // Recreate empty folder
-          ble.listAllAudioFiles();
-          Serial.printf("📱 BLE Delete Folder: %d\n", data[0]);
-        }
-      }
-      break;
-      
     case CMD_REQ_STATUS:
       ble.sendStatus(currentMode);
       Serial.println("📱 BLE Status Request");
+      break;
+      
+    case CMD_REQ_OBD2_STATUS:
+      ble.sendOBD2Status();
+      Serial.println("📱 BLE OBD2 Status Request");
+      break;
+      
+    case CMD_REQ_OBD2_SOH:
+      ble.sendOBD2SOH();
+      Serial.println("📱 BLE OBD2 SoH Request");
+      break;
+      
+    case CMD_REQ_OBD2_TEMP:
+      ble.sendOBD2Temp();
+      Serial.println("📱 BLE OBD2 Temp Request");
+      break;
+      
+    case CMD_REQ_OBD2_STEERING:
+      ble.sendOBD2Steering();
+      Serial.println("📱 BLE OBD2 Steering Request");
+      break;
+      
+    case CMD_REQ_OBD2_POWER:
+      ble.sendOBD2Power();
+      Serial.println("📱 BLE OBD2 Power Request");
       break;
       
     default:
@@ -347,38 +358,11 @@ void SystemManager::deleteCurrentRegisterFile() {
     }
     dir.close();
   }
-  Serial.printf("✅ Register %d files deleted\n", currentRegister);
-}
-
-void SystemManager::deleteAllFiles() {
-  // Stop playback to close file handles
-  if (player) {
-    player->stopPlayback();
-  }
   
-  for (int reg = 1; reg <= 4; reg++) {
-    String folderPath;
-    if (reg == 1) {
-      folderPath = "/Audio";
-    } else {
-      folderPath = "/Audio" + String(reg - 1);
-    }
-    
-    File dir = LittleFS.open(folderPath);
-    if (dir && dir.isDirectory()) {
-      File file = dir.openNextFile();
-      while (file) {
-        if (!file.isDirectory()) {
-          String filePath = folderPath + "/" + file.name();
-          file.close();  // Close file handle before delete
-          LittleFS.remove(filePath);
-        }
-        file = dir.openNextFile();
-      }
-      dir.close();
-    }
-  }
-  Serial.println("✅ All files deleted (folders preserved)");
+  // Fast blink for 2 seconds to indicate successful deletion
+  leds.setFastBlink(2000);
+  
+  Serial.printf("✅ Register %d files deleted\n", currentRegister);
 }
 
 void SystemManager::startRev() {

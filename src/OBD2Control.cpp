@@ -46,9 +46,25 @@ void OBD2Control::obd2TaskWrapper(void* pvParameters) {
 }
 
 void OBD2Control::obd2Task() {
-  // Read SoH once at startup
-  delay(2000); // Wait for CAN bus to stabilize
-  requestStateOfHealth();
+  // Auto-detect: Try HV EV first
+  delay(2000);
+  Serial.println("🔍 Auto-detecting vehicle type...");
+  
+  // Try HV EV Power
+  requestHVBatteryPower();
+  delay(200);
+  
+  if (connected) {
+    useHVMode = true;
+    Serial.println("✅ HV EV detected - using Power mode");
+    // Read SoH once at startup for HV EV
+    requestStateOfHealth();
+    delay(200);
+  } else {
+    useHVMode = false;
+    Serial.println("✅ ICE detected - using RPM mode");
+  }
+  
   startupComplete = true;
   Serial.println("✅ OBD2 startup complete");
   
@@ -57,12 +73,25 @@ void OBD2Control::obd2Task() {
     
     // Request real-time data every 100ms
     if (currentTime - lastRealtimeRequest >= REALTIME_INTERVAL) {
-#ifdef USE_HV_BATTERY_POWER
-      requestHVBatteryPower();
-#else
-      requestRPM();
-#endif
+      if (useHVMode) {
+        requestHVBatteryPower();
+      } else {
+        requestRPM();
+      }
+      
+      // Print all OBD2 data in one line
+      Serial.printf("📊 OBD2: %s=%d | SoH=%d%% | Temp=%d°C | Steering=%d°\n", 
+                   useHVMode ? "Power" : "RPM", 
+                   useHVMode ? hvBatteryPower : obd2_rpm,
+                   stateOfHealth, batteryTemp, steeringAngle);
+      
       lastRealtimeRequest = currentTime;
+    }
+    
+    // Request battery temp every 5s (only for HV EV)
+    if (useHVMode && currentTime - lastBatteryTempRequest >= BATTERY_TEMP_INTERVAL) {
+      requestBatteryTemp();
+      lastBatteryTempRequest = currentTime;
     }
     
     // Request steering angle every 1s
@@ -71,19 +100,11 @@ void OBD2Control::obd2Task() {
       lastSteeringRequest = currentTime;
     }
     
-    // Request battery temp every 5s
-    if (currentTime - lastBatteryTempRequest >= BATTERY_TEMP_INTERVAL) {
-      requestBatteryTemp();
-      lastBatteryTempRequest = currentTime;
-    }
-    
-    // Give other tasks a chance
     vTaskDelay(pdMS_TO_TICKS(50));
     yield();
   }
 }
 
-#ifdef USE_HV_BATTERY_POWER
 void OBD2Control::requestHVBatteryPower() {
   CAN.beginPacket(CAN_HVEV.request);
   CAN.write(0x03);
@@ -98,12 +119,13 @@ void OBD2Control::requestHVBatteryPower() {
   
   uint8_t data[8];
   if (readCANResponse(data, 8, CAN_HVEV.response)) {
-    int16_t powerRaw = (data[4] << 8) | data[5];
-    hvBatteryPower = abs(powerRaw);
-    hvBatteryPower = constrain(hvBatteryPower, 0, MAX_HV_POWER);
+    if (data[1] == 0x62 && data[2] == 0x44 && data[3] == 0x06) {
+      int16_t powerRaw = (data[4] << 8) | data[5];
+      hvBatteryPower = powerRaw;
+    }
   }
 }
-#else
+
 void OBD2Control::requestRPM() {
   CAN.beginPacket(CAN_RPM.request);
   CAN.write(0x03);
@@ -118,13 +140,12 @@ void OBD2Control::requestRPM() {
   
   uint8_t data[8];
   if (readCANResponse(data, 8, CAN_RPM.response)) {
-    if (data[1] == 0x41 && data[2] == 0x0C) {
-      uint16_t rpm = ((data[3] * 256) + data[4]) / 4;
+    if (data[1] == 0x62 && data[2] == 0x42 && data[3] == 0x03) {
+      uint16_t rpm = (data[4] << 8) | data[5];
       obd2_rpm = constrain(rpm, 0, MAX_RPM);
     }
   }
 }
-#endif
 
 void OBD2Control::requestStateOfHealth() {
   CAN.beginPacket(CAN_SOH.request);
@@ -163,8 +184,12 @@ void OBD2Control::requestBatteryTemp() {
   
   uint8_t data[8];
   if (readCANResponse(data, 8, CAN_BATTERY_TEMP.response)) {
-    batteryTemp = (int8_t)data[4] - 40;
-    batteryTemp = constrain(batteryTemp, -40, 100);
+    if (data[1] == 0x62 && data[2] == 0x44 && data[3] == 0x0E) {
+      uint8_t a = data[4];
+      uint8_t b = data[5];
+      batteryTemp = (int8_t)(((a * 256) + b) * 0.5) - 50;
+      batteryTemp = constrain(batteryTemp, -40, 100);
+    }
   }
 }
 
@@ -182,14 +207,16 @@ void OBD2Control::requestSteeringAngle() {
   
   uint8_t data[8];
   if (readCANResponse(data, 8, CAN_STEERING.response)) {
-    int16_t angleRaw = (data[4] << 8) | data[5];
-    steeringAngle = angleRaw / 10;
-    steeringAngle = constrain(steeringAngle, -720, 720);
+    if (data[1] == 0x62 && data[2] == 0x30 && data[3] == 0x0C) {
+      int16_t angleRaw = (data[4] << 8) | data[5];
+      steeringAngle = angleRaw / 10;
+      steeringAngle = constrain(steeringAngle, -720, 720);
+    }
   }
 }
 
 bool OBD2Control::readCANResponse(uint8_t* data, size_t maxLen, uint16_t expectedResponseId) {
-  unsigned long timeout = millis() + 10;
+  unsigned long timeout = millis() + 50;
   
   while (millis() < timeout) {
     int packetSize = CAN.parsePacket();
@@ -201,7 +228,7 @@ bool OBD2Control::readCANResponse(uint8_t* data, size_t maxLen, uint16_t expecte
       connected = true;
       return true;
     }
-    delayMicroseconds(100);
+    delayMicroseconds(500);
   }
   
   connected = false;

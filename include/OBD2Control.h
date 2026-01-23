@@ -4,7 +4,7 @@
 
 // Configuration - pilih salah satu untuk real-time input
 // #define USE_HV_BATTERY_POWER  // Comment this to use RPM instead
-#define USE_RPM_INPUT
+// #define USE_RPM_INPUT
 
 #define MAX_RPM 8000
 #define MAX_HV_POWER 200000  // 200kW max
@@ -30,11 +30,9 @@ public:
   void stopTask();
   
   // Real-time data (updated frequently ~100ms)
-#ifdef USE_HV_BATTERY_POWER
-  uint32_t getHVBatteryPower() { return hvBatteryPower; }  // Watts
-#else
+  int32_t getHVBatteryPower() { return hvBatteryPower; }  // Watts (can be negative)
   uint16_t getRPM() { return obd2_rpm; }
-#endif
+  bool isUsingHVMode() { return useHVMode; }
   bool isConnected() { return connected; }
   
   // One-time data (read at startup)
@@ -52,12 +50,10 @@ public:
   
 private:
   // Real-time variables
-#ifdef USE_HV_BATTERY_POWER
-  volatile uint32_t hvBatteryPower = 0;
-#else
+  volatile int32_t hvBatteryPower = 0;
   volatile uint16_t obd2_rpm = 1000;
-#endif
   volatile bool connected = false;
+  volatile bool useHVMode = false;
   
   // One-time variables
   uint8_t stateOfHealth = 0;
@@ -72,11 +68,8 @@ private:
   
   // Internal methods
   void obd2Task();
-#ifdef USE_HV_BATTERY_POWER
   void requestHVBatteryPower();
-#else
   void requestRPM();
-#endif
   void requestStateOfHealth();
   void requestBatteryTemp();
   void requestSteeringAngle();
