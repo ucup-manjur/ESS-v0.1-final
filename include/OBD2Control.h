@@ -18,6 +18,8 @@ struct CANIDs {
 
 const CANIDs CAN_RPM = {0x7E3, 0x7EB};
 const CANIDs CAN_HVEV = {0x7E5, 0x7ED};
+const CANIDs CAN_BATTERY_VOLTAGE = {0x7E5, 0x7ED};
+const CANIDs CAN_BATTERY_CURRENT = {0x7E5, 0x7ED};
 const CANIDs CAN_SOH = {0x7E5, 0x7ED};
 const CANIDs CAN_BATTERY_TEMP = {0x7E5, 0x7ED};
 const CANIDs CAN_STEERING = {0x720, 0x730};
@@ -36,7 +38,7 @@ public:
   bool isConnected() { return connected; }
   
   // One-time data (read at startup)
-  uint8_t getStateOfHealth() { return stateOfHealth; }  // Percentage
+  uint16_t getStateOfHealth() { return stateOfHealth; }  // Raw value
   bool isSOHRead() { return sohRead; }
   
   // Medium frequency data (~5s interval)
@@ -54,9 +56,16 @@ private:
   volatile uint16_t obd2_rpm = 1000;
   volatile bool connected = false;
   volatile bool useHVMode = false;
+  volatile bool pidSupported = false;
+  
+  // HV Battery data
+  volatile float batteryVoltage = 0.0;  // Volts
+  volatile float batteryCurrent = 0.0;  // Amps
+  volatile float batteryPowerWatts = 0.0;  // Watts
+  volatile float batteryPowerHP = 0.0;     // Horsepower
   
   // One-time variables
-  uint8_t stateOfHealth = 0;
+  uint16_t stateOfHealth = 0;
   bool sohRead = false;
   
   // Medium/High frequency variables
@@ -69,11 +78,19 @@ private:
   // Internal methods
   void obd2Task();
   void requestHVBatteryPower();
+  void requestBatteryVoltage();
+  void requestBatteryCurrent();
   void requestRPM();
   void requestStateOfHealth();
   void requestBatteryTemp();
   void requestSteeringAngle();
   bool readCANResponse(uint8_t* data, size_t maxLen, uint16_t expectedResponseId);
+  void sendTesterPresent();
+  void calculatePowerAndHP();
+  
+public:
+  // Method untuk request SoH dari aplikasi
+  void refreshStateOfHealth();
   
   // Timing control
   unsigned long lastRealtimeRequest = 0;

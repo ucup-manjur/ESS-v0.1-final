@@ -488,10 +488,25 @@ void BLEControl::sendOBD2Status() {
 
 void BLEControl::sendOBD2SOH() {
   if (!pCharacteristic) return;
-  uint8_t soh = obd2.getStateOfHealth();
-  pCharacteristic->setValue(&soh, 1);
-  pCharacteristic->notify();
-  Serial.printf("📡 OBD2 SoH: %d%%\n", soh);
+  
+  // Refresh SoH from ECU before sending
+  obd2.refreshStateOfHealth();
+  delay(100);  // Wait for response
+  
+  uint16_t soh = obd2.getStateOfHealth();
+  if (soh == 255) {
+    // Send error indicator - use 0xFF for 1-byte or special value
+    uint8_t errorByte = 0xFF;
+    pCharacteristic->setValue(&errorByte, 1);
+    pCharacteristic->notify();
+    Serial.println("📡 OBD2 SoH: ERROR");
+  } else {
+    // Send normal SoH value
+    uint8_t sohByte = (uint8_t)soh;
+    pCharacteristic->setValue(&sohByte, 1);
+    pCharacteristic->notify();
+    Serial.printf("📡 OBD2 SoH: %d%%\n", soh);
+  }
 }
 
 void BLEControl::sendOBD2Temp() {

@@ -5,6 +5,10 @@
 #include "SystemManager.h"
 #include "OBD2Control.h"
 
+// Mode selection - comment/uncomment to switch
+// #define DEV_MODE  // Use potentiometer for throttle
+#define OBD_MODE  // Use OBD2 for throttle
+
 AudioPlayer player;
 SystemManager sysManager;
 
@@ -35,38 +39,46 @@ void setup() {
   }
   Serial.println("✅ LittleFS OK");
 
-  // player.begin();
-  // sysManager.begin(&player);
-  
+#ifdef DEV_MODE
+  Serial.println("🔧 DEV MODE - Using Potentiometer");
+  player.begin();
+  sysManager.begin(&player);
+#endif
+
+#ifdef OBD_MODE
+  Serial.println("🚗 OBD MODE - Using OBD2 Data");
   // Initialize OBD2 system
   obd2.begin();
   obd2.startTask();
   Serial.println("✅ OBD2 system initialized");
+#endif
   
   // Create tasks with adjusted priorities
-  // xTaskCreatePinnedToCore(
-  //   ADCTask,           // Task function
-  //   "ADC_Task",        // Task name
-  //   4096,              // Stack size
-  //   NULL,              // Parameters
-  //   1,                 // Priority (reduced from 2)
-  //   &ADCTaskHandle,    // Task handle
-  //   0                  // Core 0
-  // );
+#ifdef DEV_MODE
+  xTaskCreatePinnedToCore(
+    ADCTask,           // Task function
+    "ADC_Task",        // Task name
+    4096,              // Stack size
+    NULL,              // Parameters
+    1,                 // Priority (reduced from 2)
+    &ADCTaskHandle,    // Task handle
+    0                  // Core 0
+  );
   
-  // xTaskCreatePinnedToCore(
-  //   BLETask,           // Task function
-  //   "BLE_Task",        // Task name
-  //   8192,              // Stack size (larger for BLE)
-  //   NULL,              // Parameters
-  //   2,                 // Priority (increased from 1)
-  //   &BLETaskHandle,    // Task handle
-  //   1                  // Core 1
-  // );
+  xTaskCreatePinnedToCore(
+    BLETask,           // Task function
+    "BLE_Task",        // Task name
+    8192,              // Stack size (larger for BLE)
+    NULL,              // Parameters
+    2,                 // Priority (increased from 1)
+    &BLETaskHandle,    // Task handle
+    1                  // Core 1
+  );
   
-  // Serial.println("✅ Dual core tasks started");
-  // Serial.println("   ADC Task -> Core 0 (Priority 1)");
-  // Serial.println("   BLE Task -> Core 1 (Priority 2)");
+  Serial.println("✅ Dual core tasks started");
+  Serial.println("   ADC Task -> Core 0 (Priority 1)");
+  Serial.println("   BLE Task -> Core 1 (Priority 2)");
+#endif
 }
 
 // ADC + Button Task - Core 0
