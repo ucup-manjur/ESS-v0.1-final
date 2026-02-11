@@ -1,3 +1,144 @@
+/*
+ * ============================================================================
+ * BLEControl.h - Bluetooth Low Energy Communication
+ * ============================================================================
+ * 
+ * DESKRIPSI:
+ * Class untuk komunikasi wireless via BLE menggunakan NimBLE library.
+ * Menangani command control, file transfer, dan OBD2 data request.
+ * 
+ * FITUR UTAMA:
+ * 1. Command Control:
+ *    - Audio control (volume, register, play/stop)
+ *    - Audio effects (rev, gear shift)
+ *    - System control (status, mode)
+ *    - OBD2 data request
+ * 
+ * 2. File Transfer:
+ *    - Upload audio file via BLE
+ *    - Max MTU: 512 bytes
+ *    - Progress tracking
+ *    - Auto-rename ke engine.raw
+ *    - Register-aware (upload ke folder sesuai register)
+ * 
+ * 3. File Management:
+ *    - List files per register
+ *    - Delete file/folder
+ *    - Format LittleFS
+ *    - Get file info
+ * 
+ * 4. OBD2 Integration:
+ *    - Request OBD2 status
+ *    - Request SOH, temp, steering, power
+ *    - Send response via BLE notify
+ * 
+ * CARA MENGGUNAKAN:
+ * 
+ * 1. Inisialisasi:
+ *    ```cpp
+ *    BLEControl ble;
+ *    ble.begin();  // Initialize BLE server
+ *    ```
+ * 
+ * 2. Check Command:
+ *    ```cpp
+ *    if (ble.hasCommand()) {
+ *        uint8_t cmd = ble.getCommand();
+ *        uint8_t* data = ble.getCommandData();
+ *        // Process command
+ *    }
+ *    ```
+ * 
+ * 3. Send Response:
+ *    ```cpp
+ *    ble.sendBLEResponse("0xAA,data");
+ *    ble.sendStatus(MODE_NORMAL);
+ *    ble.sendOBD2SOH();
+ *    ```
+ * 
+ * 4. File Transfer:
+ *    ```cpp
+ *    // Enable saat programming mode
+ *    ble.enableFileTransfer(true);
+ *    
+ *    // Aplikasi kirim:
+ *    // 1. CMD_FILE_START (0x20)
+ *    // 2. CMD_FILE_DATA (0x21) + data chunks
+ *    // 3. CMD_FILE_END (0x22)
+ *    
+ *    // Disable saat keluar programming mode
+ *    ble.enableFileTransfer(false);
+ *    ```
+ * 
+ * 5. File Management:
+ *    ```cpp
+ *    ble.replyFileList(1);  // List files di register 1
+ *    ble.sendCurrentPlaying();  // Send current file info
+ *    ble.deleteFile("/Audio/engine.raw");
+ *    ```
+ * 
+ * PROTOCOL FORMAT:
+ * Command: 0xAA [CMD] [VAL] [CHECKSUM]
+ * - Start byte: 0xAA
+ * - Command: 1 byte (lihat command definitions)
+ * - Value: 1 byte (parameter)
+ * - Checksum: CMD XOR VAL
+ * 
+ * Response: String format
+ * - File list: "0xAA,reg1:title,reg2:title,..."
+ * - File info: "0xAA,current_title"
+ * - Status: Binary format
+ * 
+ * COMMAND DEFINITIONS:
+ * Audio Control:
+ * - 0x01: Gear Up
+ * - 0x02: Gear Down
+ * - 0x03: Rev Start
+ * - 0x04: Rev Stop
+ * - 0x11: Volume/Mute (val=0:toggle, val>0:set volume)
+ * - 0x15: Set Audio Register (val=1-4)
+ * - 0x16: Toggle Auto Shift
+ * 
+ * File Management:
+ * - 0x13: Request File List (val=0:all, val=1-4:specific register)
+ * - 0x14: Request File Info (current playing)
+ * - 0x20: File Start (begin upload)
+ * - 0x21: File Data (data chunks)
+ * - 0x22: File End (finish upload)
+ * - 0x23: Delete File
+ * - 0x24: Delete Folder
+ * 
+ * OBD2 Commands:
+ * - 0x30: Request OBD2 Status (connected/disconnected)
+ * - 0x31: Request SOH (State of Health)
+ * - 0x32: Request Battery Temperature
+ * - 0x33: Request Steering Angle
+ * - 0x34: Request Power/RPM
+ * 
+ * System:
+ * - 0xFF: Request Status (mode, register, playing)
+ * 
+ * BLE CONFIGURATION:
+ * - Device Name: "QBOOM-Devices"
+ * - Service UUID: 12345678-1234-1234-1234-1234567890ab
+ * - Characteristic UUID: 87654321-4321-4321-4321-0987654321ab
+ * - File Characteristic UUID: 87654321-4321-4321-4321-0987654321cd
+ * - MTU: 512 bytes
+ * - Power: ESP_PWR_LVL_P9 (max)
+ * 
+ * FILE TRANSFER:
+ * - Max file size: 1MB
+ * - Format: .raw (PCM 8-bit)
+ * - Temp file: upload.tmp
+ * - Final file: engine.raw
+ * - Auto-normalization: 19-237 range
+ * 
+ * AUTHOR: Amazon Q
+ * DATE: 10 Februari 2026
+ * VERSION: 1.0
+ * ============================================================================
+ */
+
 #pragma once
 #include <NimBLEDevice.h>
 #include <LittleFS.h>

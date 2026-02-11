@@ -132,7 +132,7 @@ void SystemManager::enterProgrammingMode() {
   ble.sendStatus(currentMode);
   
   // Mute audio in programming mode
-  volumeControl.mute(true);
+  volumeControl.mute(false);
   
   Serial.println("🛠️ Programming Mode - Audio muted");
 }

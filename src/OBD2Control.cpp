@@ -14,13 +14,8 @@ void OBD2Control::begin() {
   }
   
   Serial.println("✅ CAN bus initialized (RX=16, TX=17)");
-  
-  // Send handshake/greeting to ECU
-  delay(1000);
-  sendTesterPresent();
-  delay(500);
-  
   connected = true;
+  // PID check will be done in task to avoid blocking
 }
 
 void OBD2Control::startTask() {
@@ -52,8 +47,22 @@ void OBD2Control::obd2TaskWrapper(void* pvParameters) {
 }
 
 void OBD2Control::obd2Task() {
+  // Wait for system to stabilize
+  delay(1000);
+  
+  // Start connection retry process
+  Serial.println("🔍 Starting OBD2 connection...");
+  connectionRetryActive = true;
+  connectionRetryStartTime = millis();
+  lastConnectionRetry = 0;
+  
+  // Check PID support first
+  Serial.println("👋 Checking PID supported...");
+  sendTesterPresent();
+  delay(500);
+  
   // Auto-detect: Try HV EV first
-  delay(2000);
+  delay(1000);
   Serial.println("🔍 Auto-detecting vehicle type...");
   
   // Try HV EV Power
@@ -64,19 +73,18 @@ void OBD2Control::obd2Task() {
   
   if (connected) {
     // useHVMode = true;  // Uncomment to force HV mode for testing 
-    useHVMode = false;    // Default to ICE for safety  <===================== pertama selesaikan pakai rpm dulu aja
+    useHVMode = false;    // Default to ICE for safety
     Serial.println("✅ HV EV detected - using Power mode");
-    // Read SoH once at startup for HV EV
-    Serial.println("🔍 Starting SoH request...");
-    requestStateOfHealth();
-    delay(200);
+    connectionRetryActive = false;  // Stop retry, connection successful
+    // Start SOH request process
+    Serial.println("🔍 Starting SOH request process...");
+    sohRequestActive = true;
+    sohRequestStartTime = millis();
+    lastSohRequest = 0; // Force immediate first request
   } else {
     useHVMode = false;
-    Serial.println("✅ ICE detected - using RPM mode");
-    // Try SoH anyway for testing
-    Serial.println("🔍 Testing SoH request anyway...");
-    requestStateOfHealth();
-    delay(200);
+    Serial.println("⚠️ No OBD2 response - starting retry process...");
+    // Connection retry will continue in main loop
   }
   
   startupComplete = true;
@@ -85,42 +93,56 @@ void OBD2Control::obd2Task() {
   while (true) {
     unsigned long currentTime = millis();
     
-    // Request real-time data every 100ms
-    if (currentTime - lastRealtimeRequest >= REALTIME_INTERVAL) {
-      if (useHVMode) {
-        requestBatteryVoltage();
-        delay(10);
-        requestBatteryCurrent();
-        delay(10);
-        calculatePowerAndHP();
-      } else {
-        requestRPM();
+    // Handle connection retry (continuous until connected or timeout)
+    handleConnectionRetry();
+    
+    // Handle SOH requests (continuous until value received or timeout)
+    handleSOHRequests();
+    
+    // Only request data if connected or in simulation mode
+    if (connected || simulationMode) {
+      // Request real-time data every 100ms
+      if (currentTime - lastRealtimeRequest >= REALTIME_INTERVAL) {
+        if (simulationMode) {
+          // Simulation mode: generate fake data
+          obd2_rpm = 1000 + (millis() / 100) % 6000;  // Simulate RPM 1000-7000
+        } else if (useHVMode) {
+          requestBatteryVoltage();
+          delay(10);
+          requestBatteryCurrent();
+          delay(10);
+          calculatePowerAndHP();
+        } else {
+          requestRPM();
+        }
+        
+        // Print all OBD2 data in one line
+        String modeDisplay = simulationMode ? "[SIM]" : "";
+        String sohDisplay = (stateOfHealth == 255) ? "ERR" : 
+                           (stateOfHealth == 0) ? "WAIT" : 
+                           String(stateOfHealth) + "%";
+        if (useHVMode) {
+          Serial.printf("📊 OBD2%s: %.2fHP | SoH=%s | Temp=%d°C | Steering=%d°\n", 
+                       modeDisplay.c_str(), batteryPowerHP, sohDisplay.c_str(), batteryTemp, steeringAngle);
+        } else {
+          Serial.printf("📊 OBD2%s: RPM=%d | SoH=%s | Temp=%d°C | Steering=%d°\n", 
+                       modeDisplay.c_str(), obd2_rpm, sohDisplay.c_str(), batteryTemp, steeringAngle);
+        }
+        
+        lastRealtimeRequest = currentTime;
       }
       
-      // Print all OBD2 data in one line
-      String sohDisplay = (stateOfHealth == 255) ? "ERR" : String(stateOfHealth) + "%";
-      if (useHVMode) {
-        Serial.printf("📊 OBD2: %.2fHP | SoH=%s | Temp=%d°C | Steering=%d°\n", 
-                     batteryPowerHP, sohDisplay.c_str(), batteryTemp, steeringAngle);
-      } else {
-        Serial.printf("📊 OBD2: RPM=%d | SoH=%s | Temp=%d°C | Steering=%d°\n", 
-                     obd2_rpm, sohDisplay.c_str(), batteryTemp, steeringAngle);
+      // Request battery temp every 5s (only for HV EV)
+      if (currentTime - lastBatteryTempRequest >= BATTERY_TEMP_INTERVAL && !simulationMode) {
+        requestBatteryTemp();
+        lastBatteryTempRequest = currentTime;
       }
       
-      lastRealtimeRequest = currentTime;
-    }
-    
-    // Request battery temp every 5s (only for HV EV)
-    // Force battery temp request for testing
-    if (currentTime - lastBatteryTempRequest >= BATTERY_TEMP_INTERVAL) {
-      requestBatteryTemp();
-      lastBatteryTempRequest = currentTime;
-    }
-    
-    // Request steering angle every 1s
-    if (currentTime - lastSteeringRequest >= STEERING_INTERVAL) {
-      requestSteeringAngle();
-      lastSteeringRequest = currentTime;
+      // Request steering angle every 1s
+      if (currentTime - lastSteeringRequest >= STEERING_INTERVAL && !simulationMode) {
+        requestSteeringAngle();
+        lastSteeringRequest = currentTime;
+      }
     }
     
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -267,14 +289,13 @@ void OBD2Control::requestStateOfHealth() {
       Serial.printf("🔍 SoH calc: a=%d, b=%d, raw=%d\n", a, b, rawSoH);
       
       // Validate SoH range
-      if (rawSoH >= 0 && rawSoH <= 100) {
+      if (rawSoH > 0 && rawSoH <= 100) {
         stateOfHealth = rawSoH;
         sohRead = true;
-        Serial.printf("✅ Battery SoH: %d%%\n", stateOfHealth);
+        sohRequestActive = false; // Stop requesting
+        Serial.printf("✅ Battery SoH: %d%% - Stopping requests\n", stateOfHealth);
       } else {
-        Serial.printf("⚠️ SoH out of range: %d (expected 0-100%%)\n", rawSoH);
-        stateOfHealth = 255;  // Error indicator
-        sohRead = false;
+        Serial.printf("⚠️ SoH out of range: %d (expected 1-100%%)\n", rawSoH);
       }
     } else if (data[1] == 0x62 && data[2] == 0x10 && data[3] == 0x48) {
       uint8_t a = data[4];
@@ -282,21 +303,46 @@ void OBD2Control::requestStateOfHealth() {
       uint16_t rawSoH = (a * 256) + b;
       Serial.printf("🔍 SoH calc: a=%d, b=%d, raw=%d\n", a, b, rawSoH);
       
-      // Validate SoH range
-      if (rawSoH >= 0 && rawSoH <= 100) {
+      // Validate SoH range and check for non-zero value
+      if (rawSoH > 0 && rawSoH <= 100) {
         stateOfHealth = rawSoH;
         sohRead = true;
-        Serial.printf("✅ Battery SoH: %d%%\n", stateOfHealth);
+        sohRequestActive = false; // Stop requesting
+        Serial.printf("✅ Battery SoH: %d%% - Stopping requests\n", stateOfHealth);
       } else {
-        Serial.printf("⚠️ SoH out of range: %d (expected 0-100%%)\n", rawSoH);
-        stateOfHealth = 255;  // Error indicator
-        sohRead = false;
+        Serial.printf("⚠️ SoH out of range: %d (expected 1-100%%)\n", rawSoH);
       }
     } else {
       Serial.printf("⚠️ SoH validation failed: %02X %02X %02X\n", data[1], data[2], data[3]);
     }
   } else {
     Serial.printf("⚠️ Failed to read SoH from 0x%03X\n", CAN_SOH.response);
+  }
+}
+
+void OBD2Control::handleSOHRequests() {
+  if (!sohRequestActive) return;
+  
+  unsigned long currentTime = millis();
+  
+  // Check timeout
+  if (currentTime - sohRequestStartTime >= SOH_REQUEST_TIMEOUT) {
+    Serial.printf("⏰ SOH request timeout after %d seconds\n", SOH_REQUEST_TIMEOUT / 1000);
+    sohRequestActive = false;
+    stateOfHealth = 255; // Error indicator
+    sohRead = false;
+    return;
+  }
+  
+  // Request SOH at intervals
+  if (currentTime - lastSohRequest >= SOH_REQUEST_INTERVAL) {
+    requestStateOfHealth();
+    lastSohRequest = currentTime;
+    
+    unsigned long elapsed = (currentTime - sohRequestStartTime) / 1000;
+    Serial.printf("🔄 SOH request #%d (elapsed: %ds)\n", 
+                 (int)((currentTime - sohRequestStartTime) / SOH_REQUEST_INTERVAL) + 1, 
+                 (int)elapsed);
   }
 }
 
@@ -412,5 +458,76 @@ void OBD2Control::sendTesterPresent() {
 
 void OBD2Control::refreshStateOfHealth() {
   Serial.println("📱 App requested SoH refresh");
-  requestStateOfHealth();
+  // Restart SOH request process
+  sohRequestActive = true;
+  sohRequestStartTime = millis();
+  lastSohRequest = 0; // Force immediate request
+  stateOfHealth = 0;  // Reset to 0
+  sohRead = false;
+  Serial.println("🔄 SOH request process restarted");
+}
+
+void OBD2Control::handleConnectionRetry() {
+  if (!connectionRetryActive) return;
+  
+  unsigned long currentTime = millis();
+  
+  // Check timeout - enter simulation mode after 1 minute
+  if (currentTime - connectionRetryStartTime >= CONNECTION_RETRY_TIMEOUT) {
+    Serial.printf("⏰ OBD2 connection timeout after %d seconds\n", CONNECTION_RETRY_TIMEOUT / 1000);
+    connectionRetryActive = false;
+    enterSimulationMode();
+    return;
+  }
+  
+  // Retry connection at intervals
+  if (currentTime - lastConnectionRetry >= CONNECTION_RETRY_INTERVAL) {
+    Serial.println("🔄 Retrying OBD2 connection...");
+    
+    // Try PID check
+    sendTesterPresent();
+    delay(200);
+    
+    // Try data request
+    if (useHVMode) {
+      requestBatteryVoltage();
+      delay(100);
+    } else {
+      requestRPM();
+      delay(100);
+    }
+    
+    if (connected) {
+      Serial.println("✅ OBD2 connected successfully!");
+      connectionRetryActive = false;
+      // Start SOH request
+      sohRequestActive = true;
+      sohRequestStartTime = millis();
+      lastSohRequest = 0;
+    } else {
+      unsigned long elapsed = (currentTime - connectionRetryStartTime) / 1000;
+      Serial.printf("⚠️ OBD2 not responding (elapsed: %ds/%ds)\n", 
+                   (int)elapsed, CONNECTION_RETRY_TIMEOUT / 1000);
+    }
+    
+    lastConnectionRetry = currentTime;
+  }
+}
+
+void OBD2Control::enterSimulationMode() {
+  Serial.println("🎮 Entering SIMULATION MODE - OBD2 not detected");
+  Serial.println("📡 System will use simulated RPM data");
+  Serial.println("🔌 You can still use potentiometer/BLE for control");
+  
+  simulationMode = true;
+  connected = false;
+  useHVMode = false;
+  
+  // Set default values
+  obd2_rpm = 1000;
+  stateOfHealth = 0;  // Unknown
+  batteryTemp = 25;   // Default temp
+  steeringAngle = 0;  // Straight
+  
+  Serial.println("✅ Simulation mode active - system operational");
 }

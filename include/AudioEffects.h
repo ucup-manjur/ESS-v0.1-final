@@ -1,3 +1,63 @@
+/*
+ * ============================================================================
+ * AudioEffects.h - Audio Effects Engine (DEPRECATED)
+ * ============================================================================
+ * 
+ * STATUS: DEPRECATED - NOT USED IN CURRENT VERSION
+ * 
+ * DESKRIPSI:
+ * Class untuk audio effects seperti rev limiter dan gear shift simulation.
+ * Class ini sudah tidak digunakan karena menyebabkan complexity dan deadlock
+ * issues di dual core architecture.
+ * 
+ * ALASAN DEPRECATED:
+ * 1. Dual Core Conflicts:
+ *    - Shared resources antara Core 0 dan Core 1
+ *    - Race conditions di sample rate updates
+ *    - Timing issues dengan FreeRTOS tasks
+ * 
+ * 2. Performance Issues:
+ *    - Overhead dari class abstraction
+ *    - Memory corruption dari static variables
+ *    - BLE response delays
+ * 
+ * 3. Complexity:
+ *    - Terlalu banyak state management
+ *    - Sulit untuk debug
+ *    - Tidak responsive untuk fast rev changes
+ * 
+ * REPLACEMENT:
+ * Audio effects sekarang diimplementasikan langsung di SystemManager.cpp
+ * dengan simple variables dan direct control. Lebih responsive dan stable.
+ * 
+ * FITUR YANG DIPINDAHKAN KE SYSTEMMANAGER:
+ * 1. Rev Limiter:
+ *    - startRev() -> SystemManager::startRev()
+ *    - stopRev() -> SystemManager::stopRev()
+ *    - updateRev() -> SystemManager::updateRev()
+ * 
+ * 2. Gear Shift:
+ *    - triggerShift() -> SystemManager::triggerShift()
+ *    - triggerGearUp() -> SystemManager::triggerGearUp()
+ *    - triggerGearDown() -> SystemManager::triggerGearDown()
+ *    - updateShift() -> SystemManager::updateShift()
+ * 
+ * CATATAN:
+ * File ini masih ada untuk referensi, tapi tidak di-compile.
+ * Jangan gunakan class ini untuk development baru.
+ * 
+ * HISTORY:
+ * - 29 Des 2025: Class dibuat dengan full features
+ * - 29 Des 2025: Ditemukan deadlock dan performance issues
+ * - 29 Des 2025: Deprecated dan diganti dengan simple approach
+ * - 10 Feb 2026: Dokumentasi ditambahkan untuk referensi
+ * 
+ * AUTHOR: M. Yusuf Baihaqi via Amazon Q
+ * DATE: 10 Februari 2026
+ * VERSION: 1.0 (DEPRECATED)
+ * ============================================================================
+ */
+
 #pragma once
 #include <Arduino.h>
 #include "AudioPlayer.h"

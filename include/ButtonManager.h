@@ -1,3 +1,82 @@
+/*
+ * ============================================================================
+ * ButtonManager.h - Physical Button Input Handler
+ * ============================================================================
+ * 
+ * DESKRIPSI:
+ * Class untuk menangani input dari 3 button fisik dengan debouncing dan
+ * long press detection. Thread-safe dengan mutex untuk dual core operation.
+ * 
+ * FITUR UTAMA:
+ * 1. Debouncing:
+ *    - Software debouncing 50ms
+ *    - Eliminasi false trigger dari noise
+ *    - Stable button reading
+ * 
+ * 2. Long Press Detection:
+ *    - Button B: 3 detik untuk programming mode
+ *    - Button C: 3 detik untuk delete file
+ *    - Configurable duration
+ * 
+ * 3. Thread-Safe:
+ *    - Mutex protection untuk flag access
+ *    - Safe untuk dual core operation
+ *    - Atomic flag operations
+ * 
+ * CARA MENGGUNAKAN:
+ * 
+ * 1. Inisialisasi:
+ *    ```cpp
+ *    ButtonManager buttons;
+ *    buttons.begin();  // Initialize pins
+ *    ```
+ * 
+ * 2. Update Loop:
+ *    ```cpp
+ *    void loop() {
+ *        buttons.update();  // Call setiap 5-10ms
+ *        
+ *        if (buttons.isButtonAPressed()) {
+ *            // Button A pressed
+ *        }
+ *        if (buttons.isButtonBLongPress()) {
+ *            // Button B long press (3s)
+ *        }
+ *    }
+ *    ```
+ * 
+ * 3. Check Press Time:
+ *    ```cpp
+ *    unsigned long pressTime = buttons.getButtonCPressTime();
+ *    if (pressTime >= 3000) {
+ *        // Button C held for 3+ seconds
+ *    }
+ *    ```
+ * 
+ * BUTTON MAPPING:
+ * - Button A: Short press only (switch register)
+ * - Button B: Short press (play/stop) + Long press (programming mode)
+ * - Button C: Short press + Long press (delete file)
+ * 
+ * TIMING:
+ * - Debounce: 50ms
+ * - Long Press: 3000ms (3 detik)
+ * - Update Rate: 5-10ms recommended
+ * 
+ * PIN CONFIGURATION:
+ * Defined in config.h:
+ * - BUTTON_A_PIN
+ * - BUTTON_B_PIN
+ * - BUTTON_C_PIN
+ * - INPUT_PULLUP mode
+ * - Active LOW (pressed = LOW)
+ * 
+ * AUTHOR: Amazon Q
+ * DATE: 10 Februari 2026
+ * VERSION: 1.0
+ * ============================================================================
+ */
+
 #pragma once
 #include <Arduino.h>
 

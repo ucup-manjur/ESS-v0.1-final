@@ -1,3 +1,94 @@
+/*
+ * ============================================================================
+ * OBD2Control.h - OBD2 CAN Bus Integration
+ * ============================================================================
+ * 
+ * DESKRIPSI:
+ * Class untuk integrasi dengan OBD2 CAN bus kendaraan. Membaca data real-time
+ * seperti RPM, HV Battery Power, State of Health, Battery Temperature, dan
+ * Steering Angle dari ECU kendaraan.
+ * 
+ * FITUR UTAMA:
+ * 1. Multi-Data Support:
+ *    - RPM (untuk ICE vehicles)
+ *    - HV Battery Power (untuk EV vehicles)
+ *    - State of Health (SOH) - battery health
+ *    - Battery Temperature
+ *    - Steering Angle
+ * 
+ * 2. Connection Retry System:
+ *    - Auto-retry setiap 2 detik
+ *    - Timeout 60 detik (1 menit)
+ *    - Fallback ke simulation mode jika gagal
+ * 
+ * 3. SOH Request System:
+ *    - Continuous request sampai nilai valid diterima
+ *    - Timeout 30 detik
+ *    - Configurable interval (500ms)
+ * 
+ * 4. Simulation Mode:
+ *    - Auto-enable jika OBD2 tidak terdeteksi
+ *    - Generate simulated RPM data
+ *    - System tetap operational
+ * 
+ * CARA MENGGUNAKAN:
+ * 
+ * 1. Inisialisasi:
+ *    ```cpp
+ *    obd2.begin();        // Initialize CAN bus
+ *    obd2.startTask();    // Start OBD2 task di Core 1
+ *    ```
+ * 
+ * 2. Baca Data:
+ *    ```cpp
+ *    uint16_t rpm = obd2.getRPM();
+ *    int32_t power = obd2.getHVBatteryPower();
+ *    uint16_t soh = obd2.getStateOfHealth();
+ *    int8_t temp = obd2.getBatteryTemp();
+ *    int16_t steering = obd2.getSteeringAngle();
+ *    ```
+ * 
+ * 3. Cek Status:
+ *    ```cpp
+ *    if (obd2.isConnected()) {
+ *        // OBD2 connected
+ *    }
+ *    if (obd2.isSimulationMode()) {
+ *        // Running in simulation mode
+ *    }
+ *    ```
+ * 
+ * 4. Refresh SOH:
+ *    ```cpp
+ *    obd2.refreshStateOfHealth();  // Restart SOH request
+ *    ```
+ * 
+ * CAN BUS CONFIGURATION:
+ * - RX Pin: GPIO 16
+ * - TX Pin: GPIO 17
+ * - Speed: 500 kbps (standard automotive)
+ * - Protocol: ISO 15765-4 (CAN)
+ * 
+ * CAN ID MAPPING:
+ * - RPM: Request 0x7E3, Response 0x7EB
+ * - HV Power: Request 0x7E5, Response 0x7ED
+ * - SOH: Request 0x7E5, Response 0x7ED
+ * - Battery Temp: Request 0x7E5, Response 0x7ED
+ * - Steering: Request 0x720, Response 0x730
+ * 
+ * TIMING CONFIGURATION:
+ * - Real-time data (RPM/Power): 100ms interval
+ * - Battery temperature: 5s interval
+ * - Steering angle: 1s interval
+ * - SOH request: 500ms interval, 30s timeout
+ * - Connection retry: 2s interval, 60s timeout
+ * 
+ * AUTHOR: Amazon Q
+ * DATE: 10 Februari 2026
+ * VERSION: 1.0
+ * ============================================================================
+ */
+
 #pragma once
 #include <Arduino.h>
 #include <CAN.h>
@@ -36,6 +127,7 @@ public:
   uint16_t getRPM() { return obd2_rpm; }
   bool isUsingHVMode() { return useHVMode; }
   bool isConnected() { return connected; }
+  bool isSimulationMode() { return simulationMode; }  // Check if in simulation mode
   
   // One-time data (read at startup)
   uint16_t getStateOfHealth() { return stateOfHealth; }  // Raw value
@@ -68,6 +160,21 @@ private:
   uint16_t stateOfHealth = 0;
   bool sohRead = false;
   
+  // SOH request control
+  bool sohRequestActive = false;
+  unsigned long sohRequestStartTime = 0;
+  unsigned long lastSohRequest = 0;
+  const unsigned long SOH_REQUEST_INTERVAL = 500;  // 500ms between requests
+  const unsigned long SOH_REQUEST_TIMEOUT = 30000; // 30s timeout
+  
+  // OBD2 connection retry control
+  bool connectionRetryActive = false;
+  unsigned long connectionRetryStartTime = 0;
+  unsigned long lastConnectionRetry = 0;
+  const unsigned long CONNECTION_RETRY_INTERVAL = 2000;  // 2s between retries
+  const unsigned long CONNECTION_RETRY_TIMEOUT = 60000;  // 60s timeout (1 minute)
+  bool simulationMode = false;  // Fallback to simulation if OBD not detected
+  
   // Medium/High frequency variables
   int8_t batteryTemp = 25;        // Default 25°C
   int16_t steeringAngle = 0;      // Default straight
@@ -87,6 +194,9 @@ private:
   bool readCANResponse(uint8_t* data, size_t maxLen, uint16_t expectedResponseId);
   void sendTesterPresent();
   void calculatePowerAndHP();
+  void handleSOHRequests(); // New method for SOH request logic
+  void handleConnectionRetry(); // New method for connection retry logic
+  void enterSimulationMode(); // Fallback to simulation mode
   
 public:
   // Method untuk request SoH dari aplikasi
