@@ -3,10 +3,10 @@
 #include "VolumeControl.h"
 
 hw_timer_t *AudioPlayer::timer = nullptr;
-uint8_t *AudioPlayer::audioBuffer = nullptr;
-uint32_t AudioPlayer::audioLength = 0;
+volatile uint8_t *AudioPlayer::audioBuffer = nullptr;
+volatile uint32_t AudioPlayer::audioLength = 0;
 volatile uint32_t AudioPlayer::index = 0;
-uint32_t AudioPlayer::currentSampleRate = 8000;
+volatile uint32_t AudioPlayer::currentSampleRate = 8000;
 VolumeControl* AudioPlayer::volumeCtrl = nullptr;
 
 // Konstruktor AudioPlayer
@@ -72,21 +72,27 @@ void IRAM_ATTR AudioPlayer::onTimerISR() {
     return;
   }
 
+  // Local copy for ISR safety
+  uint32_t localIndex = index;
+  uint32_t localLength = audioLength;
+  
   // Bounds check - CRITICAL!
-  if (index >= audioLength) {
-    index = 0;
+  if (localIndex >= localLength) {
+    localIndex = 0;
   }
   
   // Process audio through volume control
-  uint8_t sample = volumeCtrl->processAudioSample(audioBuffer[index]);
+  uint8_t sample = volumeCtrl->processAudioSample(audioBuffer[localIndex]);
   dacWrite(AUDIO_DAC_PIN, sample);
   
-  index++;
+  localIndex++;
   
   // Safety: prevent overflow
-  if (index >= audioLength) {
-    index = 0;
+  if (localIndex >= localLength) {
+    localIndex = 0;
   }
+  
+  index = localIndex;
 }
 
 // Inisialisasi DAC dan timer hardware untuk playback audio
@@ -140,7 +146,7 @@ bool AudioPlayer::loadFile(const char *path) {
   }
   
   f.close();
-  normalizePCM8(audioBuffer, audioLength);
+  normalizePCM8((uint8_t*)audioBuffer, audioLength);
   index = 0;
   
   Serial.printf("✅ Loaded + normalized: %s (%lu bytes, Free: %lu)\n", 
@@ -208,7 +214,7 @@ uint32_t AudioPlayer::getSampleRate() {
 
 void AudioPlayer::cleanupAudioBuffer() {
   if (audioBuffer) {
-    free(audioBuffer);
+    free((void*)audioBuffer);
     audioBuffer = nullptr;
     audioLength = 0;
   }
@@ -234,7 +240,7 @@ bool AudioPlayer::allocateBuffer() {
 }
 
 bool AudioPlayer::readFileData(File& f) {
-  size_t bytesRead = f.read(audioBuffer, audioLength);
+  size_t bytesRead = f.read((uint8_t*)audioBuffer, audioLength);
   if (bytesRead != audioLength) {
     Serial.printf("❌ Read error: expected %lu, got %lu\n", audioLength, bytesRead);
     cleanupAudioBuffer();

@@ -130,9 +130,9 @@ private:
   bool restoreTimer(bool success);
 
   static hw_timer_t *timer;
-  static uint8_t *audioBuffer;
-  static uint32_t audioLength;
+  static volatile uint8_t *audioBuffer;
+  static volatile uint32_t audioLength;
   static volatile uint32_t index;
-  static uint32_t currentSampleRate;
+  static volatile uint32_t currentSampleRate;
   static VolumeControl* volumeCtrl;
 };
