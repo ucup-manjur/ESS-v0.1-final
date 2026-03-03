@@ -95,15 +95,15 @@
 // Hardware
 #define AUDIO_DAC_PIN         25   // DAC1 (GPIO25)
 
-#define THROTTLE_ADC_PIN      32   // example ADC pin (modify)
-#define BUTTON_A_PIN          33
-#define BUTTON_B_PIN          34
-#define BUTTON_C_PIN          35
-
-// #define THROTTLE_ADC_PIN      34   // example ADC pin LAWAS
+// #define THROTTLE_ADC_PIN      32   // example ADC pin (modify)
 // #define BUTTON_A_PIN          33
-// #define BUTTON_B_PIN          32
+// #define BUTTON_B_PIN          34
 // #define BUTTON_C_PIN          35
+
+#define THROTTLE_ADC_PIN      34   // example ADC pin LAWAS
+#define BUTTON_A_PIN          33
+#define BUTTON_B_PIN          32
+#define BUTTON_C_PIN          35
 
 #define LED_1_PIN             4
 #define LED_2_PIN             13
@@ -119,3 +119,14 @@
 // Timer for ISR (uses timer0)
 #define TIMER_GROUP           0
 #define TIMER_INDEX           0
+
+// ============================================================================
+// DYNAMIC SLOPE CONFIGURATION
+// ============================================================================
+// Default values for throttle response (can be changed via BLE)
+#define DEFAULT_LOW_RPM_SLOPE      80    // Low RPM zone (0-25%)
+#define DEFAULT_MID_RPM_SLOPE      250   // Mid RPM zone (25-75%)
+#define DEFAULT_HIGH_RPM_SLOPE     150   // High RPM zone (75-100%)
+#define DEFAULT_ACCEL_LAG          0.7f  // Acceleration lag (0.5=slow, 1.0=instant)
+#define DEFAULT_DECEL_LAG          0.6f  // Deceleration lag (0.5=slow, 1.0=instant)
+#define DEFAULT_AGGRESSIVE_THRESH  1000  // Threshold for sudden throttle detection

@@ -173,6 +173,15 @@
 #define CMD_DELETE_FILE      0x23
 #define CMD_DELETE_FOLDER    0x24
 
+// Slope config command definitions
+#define CMD_SET_SLOPE_LOW    0x50
+#define CMD_SET_SLOPE_MID    0x51
+#define CMD_SET_SLOPE_HIGH   0x52
+#define CMD_SET_SLOPE_DECEL  0x53
+#define CMD_SET_SLOPE_LAG    0x54
+#define CMD_SET_SLOPE_THRESH 0x55
+#define CMD_REQ_SLOPE_CONFIG 0x56
+
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
 

@@ -93,28 +93,43 @@
 #include "AudioPlayer.h"
 #include "SystemManager.h"
 #include "OBD2Control.h"
+// #include "IMUControl.h"
 
 // ============================================================================
 // MODE SELECTION
 // ============================================================================
-// Pilih salah satu mode operasi:
-// - DEV_MODE: Development mode dengan potentiometer untuk kontrol RPM
-// - OBD_MODE: Production mode dengan OBD2 CAN bus untuk data kendaraan
-//
-// Cara switch mode:
-// 1. Comment mode yang tidak digunakan dengan //
-// 2. Uncomment mode yang akan digunakan
-// 3. Upload ulang firmware ke ESP32
-// ============================================================================
 
-// #define DEV_MODE  // Use potentiometer for throttle
-#define OBD_MODE  // Use OBD2 for throttle
+#define DEV_MODE  // Use potentiometer for throttle
+// #define OBD_MODE  // Use OBD2 for throttle
+
+// Dynamic Slope (0=DISABLED/Fixed, 1=ENABLED/Dynamic)
+#define DYNAMIC_SLOPE 1
+
+// IMU Enable (0=DISABLED, 1=ENABLED)
+#define IMU_ENABLE 0
+
+// IMU Debug (0=OFF, 1=ON)
+#define IMU_DEBUG 0
 
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
 AudioPlayer player;        // Audio playback engine
 SystemManager sysManager;  // System control & coordination
+
+// ============================================================================
+// DYNAMIC SLOPE PARAMETERS (Configurable via BLE)
+// ============================================================================
+struct SlopeConfig {
+  int lowRpmSlope = DEFAULT_LOW_RPM_SLOPE;
+  int midRpmSlope = DEFAULT_MID_RPM_SLOPE;
+  int highRpmSlope = DEFAULT_HIGH_RPM_SLOPE;
+  float accelLag = DEFAULT_ACCEL_LAG;
+  float decelLag = DEFAULT_DECEL_LAG;
+  int aggressiveThreshold = DEFAULT_AGGRESSIVE_THRESH;
+};
+
+extern SlopeConfig slopeConfig;
 
 // ============================================================================
 // TASK HANDLES
@@ -170,13 +185,21 @@ void setup() {
 // MODE-SPECIFIC INITIALIZATION
 // ============================================================================
 #ifdef DEV_MODE
-  // DEV MODE: Development dengan potentiometer
-  // - Audio player untuk playback
-  // - System manager untuk kontrol button/LED/BLE
-  // - Potentiometer di GPIO 34 untuk kontrol RPM
   Serial.println("🔧 DEV MODE - Using Potentiometer");
   player.begin();
   sysManager.begin(&player);
+  
+#if IMU_ENABLE
+  Serial.println("Starting IMU initialization...");
+  delay(500);
+  if (imuControl.begin()) {
+    Serial.println("✅ IMU enabled");
+  } else {
+    Serial.println("⚠️ Continuing without IMU");
+  }
+#else
+  Serial.println("⚠️ IMU disabled (IMU_ENABLE=0)");
+#endif
 #endif
 
 #ifdef OBD_MODE
@@ -267,46 +290,78 @@ void ADCTask(void* parameter) {
   static unsigned long lastUpdate = 0;
   static int lastRaw = 0;
   static int smoothedRaw = 0;
-  
-  // Configurable ADC slope limiting
-  static int adcSlopeLimit = 200;
+  static int targetRaw = 0;  // Target dari input
   
   for(;;) {
     unsigned long now = millis();
-    
-    // Handle buttons first (higher priority)
     sysManager.updateButtons();
     
-    // Throttle input update every 30ms for smoother response
     if (now - lastUpdate >= 30) {
       int raw = analogRead(THROTTLE_ADC_PIN);
       
-      // Smooth the ADC reading with configurable slope limiting
+#if DYNAMIC_SLOPE
+      // Update target
+      targetRaw = raw;
+      
+      int diff = targetRaw - smoothedRaw;
+      float throttlePercent = (float)smoothedRaw / 4095.0f;
+      int slope;
+      
+      // Base slope by RPM zone
+      if (throttlePercent < 0.25f) {
+        slope = slopeConfig.lowRpmSlope;   // Low RPM
+      } else if (throttlePercent < 0.75f) {
+        slope = slopeConfig.midRpmSlope;   // Mid RPM
+      } else {
+        slope = slopeConfig.highRpmSlope;  // High RPM
+      }
+      
+      // Acceleration vs Deceleration
+      if (diff > 0) {
+        // Accelerating: Apply lag
+        // Aggressive input detection (sudden throttle)
+        if (abs(diff) > slopeConfig.aggressiveThreshold) {
+          slope = (int)(slope * slopeConfig.accelLag);  // Slower on sudden gas
+        }
+      } else {
+        // Decelerating: Apply lag (engine inertia)
+        slope = (int)(slope * slopeConfig.decelLag);  // Slower on decel too
+      }
+      
+      // Apply slope limiting
+      if (abs(diff) > slope) {
+        smoothedRaw += (diff > 0) ? slope : -slope;
+      } else {
+        smoothedRaw = targetRaw;
+      }
+#else
+      // Fixed slope (original)
       int diff = raw - smoothedRaw;
-      if (abs(diff) > adcSlopeLimit) {
-        // Limit big jumps - apply slope
-        smoothedRaw += (diff > 0) ? adcSlopeLimit : -adcSlopeLimit;
+      int slope = 200;
+      if (abs(diff) > slope) {
+        smoothedRaw += (diff > 0) ? slope : -slope;
       } else {
         smoothedRaw = raw;
       }
+#endif
       
-      // Debug ADC values with smaller threshold
-      if (abs(smoothedRaw - lastRaw) > 10) {
-        uint32_t rate = map(smoothedRaw, 0, 4095, 8000, 44100);
-        Serial.printf("🎯 ADC: %d (smooth: %d) -> Rate: %d Hz\n", raw, smoothedRaw, rate);
-        lastRaw = smoothedRaw;
+      int modifiedRaw = smoothedRaw;
+      
+      if (abs(modifiedRaw - lastRaw) > 10) {
+        uint32_t rate = map(modifiedRaw, 0, 4095, 8000, 44100);
+        Serial.printf("🎯 ADC: %d -> %d Hz (slope: %d)\n", modifiedRaw, rate, slope);
+        lastRaw = modifiedRaw;
       }
       
-      // Use ADC as throttle input - back to 44.1kHz
-      uint32_t throttleRate = map(smoothedRaw, 0, 4095, 8000, 44100);
+      uint32_t throttleRate = map(modifiedRaw, 0, 4095, 8000, 44100);
       sysManager.setCurrentThrottleRate(throttleRate);
       if (!sysManager.isRevActive() && !sysManager.isShiftActive()) {
-        player.updateSampleRateFromADC(smoothedRaw);
+        player.updateSampleRateFromADC(modifiedRaw);
       }
       lastUpdate = now;
     }
     
-    vTaskDelay(5 / portTICK_PERIOD_MS);  // Reduced delay for better button response
+    vTaskDelay(5 / portTICK_PERIOD_MS);
   }
 }
 
@@ -368,3 +423,5 @@ void loop() {
   vTaskDelay(100 / portTICK_PERIOD_MS);
 }
 
+
+SlopeConfig slopeConfig;

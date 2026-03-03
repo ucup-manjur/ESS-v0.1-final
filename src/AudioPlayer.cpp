@@ -26,6 +26,12 @@ val → normalizedValue - Nilai setelah normalisasi
 */
 void AudioPlayer::normalizePCM8(uint8_t *data, size_t length) {
   if (!data || length == 0) return;
+  
+  // Bounds check
+  if (length > audioLength) {
+    Serial.println("❌ Normalization: length exceeds buffer!");
+    return;
+  }
 
   uint8_t maxValue = 0;
   uint8_t minValue = 255;
@@ -66,13 +72,21 @@ void IRAM_ATTR AudioPlayer::onTimerISR() {
     return;
   }
 
-  if (index >= audioLength) index = 0;
+  // Bounds check - CRITICAL!
+  if (index >= audioLength) {
+    index = 0;
+  }
   
   // Process audio through volume control
   uint8_t sample = volumeCtrl->processAudioSample(audioBuffer[index]);
   dacWrite(AUDIO_DAC_PIN, sample);
   
   index++;
+  
+  // Safety: prevent overflow
+  if (index >= audioLength) {
+    index = 0;
+  }
 }
 
 // Inisialisasi DAC dan timer hardware untuk playback audio
@@ -92,6 +106,7 @@ void AudioPlayer::begin() {
 
 bool AudioPlayer::loadFile(const char *path) {
   const uint32_t MAX_FILE_SIZE = 1048576; // 1MB
+  const uint32_t MIN_FREE_HEAP = 50000;   // Reserve 50KB
   
   if (timer) timerAlarmDisable(timer);
   
@@ -109,6 +124,16 @@ bool AudioPlayer::loadFile(const char *path) {
     return restoreTimer(false);
   }
   
+  // Memory check BEFORE allocation
+  uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < audioLength + MIN_FREE_HEAP) {
+    Serial.printf("❌ Not enough memory! Need: %lu, Free: %lu\n", 
+                  audioLength + MIN_FREE_HEAP, freeHeap);
+    audioLength = 0;
+    f.close();
+    return restoreTimer(false);
+  }
+  
   if (!allocateBuffer() || !readFileData(f)) {
     f.close();
     return restoreTimer(false);
@@ -118,7 +143,8 @@ bool AudioPlayer::loadFile(const char *path) {
   normalizePCM8(audioBuffer, audioLength);
   index = 0;
   
-  Serial.printf("✅ Loaded + normalized: %s (%lu bytes)\n", path, audioLength);
+  Serial.printf("✅ Loaded + normalized: %s (%lu bytes, Free: %lu)\n", 
+                path, audioLength, ESP.getFreeHeap());
   return restoreTimer(true);
 }
 
