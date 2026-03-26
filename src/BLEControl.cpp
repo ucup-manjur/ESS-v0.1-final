@@ -1,5 +1,6 @@
 #include "BLEControl.h"
 #include "OBD2Control.h"
+#include "IMUControl.h"
 
 const int MAX_GEAR = 4;
 const int MIN_GEAR = 0;
@@ -538,4 +539,21 @@ void BLEControl::sendOBD2Power() {
   pCharacteristic->notify();
   Serial.printf("📡 OBD2 RPM: %d\n", rpm);
 #endif
+}
+
+void BLEControl::sendIMUStatus() {
+  if (!pCharacteristic) return;
+  // Format: [0xAA, 0x61, enabled, condition, pitch_int8, offset_int8, checksum]
+  uint8_t buf[7];
+  buf[0] = 0xAA;
+  buf[1] = 0x61;
+  buf[2] = imuControl.isEnabled() ? 1 : 0;
+  buf[3] = (uint8_t)imuControl.getCondition(); // 0=flat, 1=up, 2=down
+  buf[4] = (uint8_t)(int8_t)imuControl.getPitchDeg();
+  buf[5] = (uint8_t)(int8_t)imuControl.getCalibOffset();
+  buf[6] = buf[1] ^ buf[2] ^ buf[3] ^ buf[4] ^ buf[5];
+  pCharacteristic->setValue(buf, 7);
+  pCharacteristic->notify();
+  Serial.printf("📡 IMU: en=%d cond=%d pitch=%.1f° offset=%.1f°\n",
+    buf[2], buf[3], imuControl.getPitchDeg(), imuControl.getCalibOffset());
 }

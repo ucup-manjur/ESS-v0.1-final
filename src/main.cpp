@@ -89,18 +89,19 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 #include "AudioPlayer.h"
 #include "SystemManager.h"
 #include "OBD2Control.h"
-// #include "IMUControl.h"
+#include "IMUControl.h"
 
 // ============================================================================
 // MODE SELECTION
 // ============================================================================
 
-#define DEV_MODE  // Use potentiometer for throttle
-// #define OBD_MODE  // Use OBD2 for throttle
+// #define DEV_MODE  // Use potentiometer for throttle
+#define OBD_MODE  // Use OBD2 for throttle
 
 // Dynamic Slope (0=DISABLED/Fixed, 1=ENABLED/Dynamic)
 #define DYNAMIC_SLOPE 1
@@ -129,7 +130,7 @@ struct SlopeConfig {
   int aggressiveThreshold = DEFAULT_AGGRESSIVE_THRESH;
 };
 
-extern SlopeConfig slopeConfig;
+SlopeConfig slopeConfig;  // Global instance
 
 // ============================================================================
 // TASK HANDLES
@@ -159,6 +160,13 @@ void setup() {
   // Initialize serial communication
   Serial.begin(115200);
   delay(500);
+
+  // ============================================================================
+  // WATCHDOG TIMER INITIALIZATION
+  // ============================================================================
+  esp_task_wdt_init(30, true);  // 30s timeout, panic on timeout
+  esp_task_wdt_add(NULL);       // Add current task (setup/loop)
+  Serial.println("✅ Watchdog enabled (30s)");
 
   // ============================================================================
   // LITTLEFS INITIALIZATION
@@ -203,18 +211,24 @@ void setup() {
 #endif
 
 #ifdef OBD_MODE
-  // OBD MODE: Production dengan OBD2 CAN bus
-  // - Audio player untuk playback
-  // - System manager untuk kontrol button/LED/BLE
-  // - OBD2 control untuk baca data CAN bus (RPM, SOH, dll)
-  // - Auto-retry 60s, fallback ke simulation mode
   Serial.println("🚗 OBD MODE - Using OBD2 Data");
-  // Initialize OBD2 system
   player.begin();
   sysManager.begin(&player);
   obd2.begin();
   obd2.startTask();
   Serial.println("✅ OBD2 system initialized");
+
+#if IMU_ENABLE
+  Serial.println("Starting IMU initialization...");
+  delay(500);
+  if (imuControl.begin()) {
+    Serial.println("✅ IMU enabled");
+  } else {
+    Serial.println("⚠️ Continuing without IMU");
+  }
+#else
+  Serial.println("⚠️ IMU disabled (IMU_ENABLE=0)");
+#endif
 #endif
   
   // ============================================================================
@@ -292,7 +306,10 @@ void ADCTask(void* parameter) {
   static int smoothedRaw = 0;
   static int targetRaw = 0;  // Target dari input
   
+  esp_task_wdt_add(NULL);  // Add ADC task to watchdog
+  
   for(;;) {
+    esp_task_wdt_reset();  // Feed watchdog
     unsigned long now = millis();
     sysManager.updateButtons();
     
@@ -395,7 +412,10 @@ void ADCTask(void* parameter) {
 // - Di OBD_MODE: Button hanya dihandle di BLE Task
 // ============================================================================
 void BLETask(void* parameter) {
+  esp_task_wdt_add(NULL);  // Add BLE task to watchdog
+  
   for(;;) {
+    esp_task_wdt_reset();  // Feed watchdog
     // Handle buttons, BLE and LED updates
     sysManager.updateButtons();
     sysManager.updateBLE();
@@ -419,9 +439,7 @@ void BLETask(void* parameter) {
 // - Gunakan tasks untuk operasi yang membutuhkan real-time response
 // ============================================================================
 void loop() {
+  esp_task_wdt_reset();  // Feed watchdog
   // Main loop now just handles basic system tasks
   vTaskDelay(100 / portTICK_PERIOD_MS);
 }
-
-
-SlopeConfig slopeConfig;

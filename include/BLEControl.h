@@ -182,6 +182,11 @@
 #define CMD_SET_SLOPE_THRESH 0x55
 #define CMD_REQ_SLOPE_CONFIG 0x56
 
+// IMU commands
+#define CMD_IMU_TOGGLE     0x60
+#define CMD_REQ_IMU_STATUS 0x61
+#define CMD_IMU_CALIBRATE  0x62
+
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
 
@@ -222,6 +227,7 @@ public:
   void sendOBD2Temp();
   void sendOBD2Steering();
   void sendOBD2Power();
+  void sendIMUStatus();
   
 private:
   static NimBLECharacteristic* pCharacteristic;

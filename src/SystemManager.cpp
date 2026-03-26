@@ -18,12 +18,13 @@ void SystemManager::update() {
   updateButtons();
   updateLEDs();
   updateBLE();
+  updateIMU();
+  applyIMUModifier();
 }
 
 void SystemManager::updateButtons() {
   buttons.update();
   
-  // Only update effects when needed
   if (isRevving || isRevDown) {
     updateRev();
   } else if (isShifting) {
@@ -81,19 +82,16 @@ void SystemManager::handleProgrammingMode() {
     // Handle button C short press in programming mode
   }
   
-  // Button C timing: 3s = delete current register file only
   static bool deleteExecuted = false;
   unsigned long cPressTime = buttons.getButtonCPressTime();
   
   if (cPressTime == 0) {
-    // Button released, reset flag
     deleteExecuted = false;
   } else if (cPressTime >= 3000 && !deleteExecuted) {
-    // Execute delete only once
     deleteCurrentRegisterFile();
     deleteExecuted = true;
   } else if (cPressTime >= 1000) {
-    leds.setAllBlink();  // Blinking = warning, getting ready
+    leds.setAllBlink();
   }
 }
 
@@ -103,7 +101,7 @@ void SystemManager::switchRegister() {
   
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
-  ble.sendCurrentPlaying();  // Auto-send current file info
+  ble.sendCurrentPlaying();
   Serial.printf("📍 Register: %d\n", currentRegister);
   
   if (currentMode == MODE_NORMAL && isPlaying) {
@@ -130,10 +128,7 @@ void SystemManager::enterProgrammingMode() {
   leds.setBlinkMode(true);
   ble.enableFileTransfer(true);
   ble.sendStatus(currentMode);
-  
-  // Mute audio in programming mode
   volumeControl.mute(false);
-  
   Serial.println("🛠️ Programming Mode - Audio muted");
 }
 
@@ -143,10 +138,7 @@ void SystemManager::exitProgrammingMode() {
   leds.setRegister(currentRegister);
   ble.enableFileTransfer(false);
   ble.sendStatus(currentMode);
-  
-  // Unmute audio when exiting programming mode
   volumeControl.mute(false);
-  
   Serial.println("🎮 Normal Mode - Audio restored");
 }
 
@@ -186,12 +178,11 @@ void SystemManager::handleBLECommands() {
           volumeControl.toggleMute();
           Serial.println("📱 BLE Toggle Mute");
         } else {
-          // Don't unmute in programming mode
           if (currentMode == MODE_NORMAL) {
-            volumeControl.mute(false);  // Unmute when setting volume
+            volumeControl.mute(false);
           }
           volumeControl.setVolume(data[0]);
-          Serial.printf("📱 BLE Set Volume: %d%% (Mode: %s)\n", data[0], 
+          Serial.printf("📱 BLE Set Volume: %d%% (Mode: %s)\n", data[0],
                        currentMode == MODE_PROGRAMMING ? "Programming" : "Normal");
         }
       }
@@ -202,11 +193,10 @@ void SystemManager::handleBLECommands() {
         currentRegister = data[0];
         leds.setRegister(currentRegister);
         ble.setCurrentRegister(currentRegister);
-        ble.sendCurrentPlaying();  // Auto-send current file info
+        ble.sendCurrentPlaying();
         if (isPlaying) {
           loadCurrentSound();
         } else {
-          // Start playing the selected register
           isPlaying = true;
           leds.setRegister(currentRegister);
           loadCurrentSound();
@@ -229,14 +219,13 @@ void SystemManager::handleBLECommands() {
         ble.replyFileList(data[0]);
         Serial.printf("📱 BLE Request File List: Register %d\n", data[0]);
       } else {
-        ble.replyFileList(0);  // All folders
+        ble.replyFileList(0);
         Serial.println("📱 BLE Request All File Lists");
       }
       break;
       
     case CMD_DELETE_FILE:
       if (ble.getCommandDataLength() > 0) {
-        // Value 1=engine, 2=shift, 3=effects folder
         const char* folders[] = {"", "/audio/engine", "/audio/shift", "/audio/effects"};
         if (data[0] >= 1 && data[0] <= 3) {
           ble.deleteFile((String(folders[data[0]]) + "/upload.tmp").c_str());
@@ -276,26 +265,39 @@ void SystemManager::handleBLECommands() {
       Serial.println("📱 BLE OBD2 Power Request");
       break;
       
+    case CMD_IMU_TOGGLE:
+      imuControl.setEnabled(!imuControl.isEnabled());
+      ble.sendIMUStatus();
+      Serial.printf("📱 IMU %s\n", imuControl.isEnabled() ? "ON" : "OFF");
+      break;
+
+    case CMD_REQ_IMU_STATUS:
+      ble.sendIMUStatus();
+      Serial.println("📱 IMU Status Request");
+      break;
+
+    case CMD_IMU_CALIBRATE:
+      imuControl.calibrate();
+      ble.sendIMUStatus(); // kirim status terbaru setelah kalibrasi
+      Serial.println("📱 IMU Calibrate");
+      break;
+      
     default:
       Serial.printf("⚠️ Unknown BLE command: 0x%02X\n", cmd);
       break;
   }
   
-  // Reset command data after processing
   ble.getCommandData()[0] = 0;
-  // Note: commandDataLen will be reset on next command
 }
 
 void SystemManager::loadCurrentSound() {
   if (!player) return;
   
-  // Don't load sound in programming mode
   if (currentMode == MODE_PROGRAMMING) {
     Serial.println("⚠️ Cannot load sound in programming mode");
     return;
   }
   
-  // Mapping register ke folder: 1=/Audio, 2=/Audio1, 3=/Audio2, 4=/Audio3
   String folderPath;
   if (currentRegister == 1) {
     folderPath = "/Audio";
@@ -303,7 +305,6 @@ void SystemManager::loadCurrentSound() {
     folderPath = "/Audio" + String(currentRegister - 1);
   }
   
-  // Find first .raw file in folder
   String filename = "";
   File dir = LittleFS.open(folderPath);
   if (dir && dir.isDirectory()) {
@@ -332,7 +333,6 @@ void SystemManager::formatLittleFS() {
 }
 
 void SystemManager::deleteCurrentRegisterFile() {
-  // Stop playback to close file handles
   if (player) {
     player->stopPlayback();
   }
@@ -350,7 +350,7 @@ void SystemManager::deleteCurrentRegisterFile() {
     while (file) {
       if (!file.isDirectory()) {
         String filePath = folderPath + "/" + file.name();
-        file.close();  // Close file handle before delete
+        file.close();
         LittleFS.remove(filePath);
         Serial.printf("🗑️ Deleted: %s\n", filePath.c_str());
       }
@@ -359,17 +359,31 @@ void SystemManager::deleteCurrentRegisterFile() {
     dir.close();
   }
   
-  // Fast blink for 2 seconds to indicate successful deletion
   leds.setFastBlink(2000);
-  
   Serial.printf("✅ Register %d files deleted\n", currentRegister);
+}
+
+void SystemManager::updateIMU() {
+  imuControl.update();
+}
+
+void SystemManager::applyIMUModifier() {
+  if (!player || !imuControl.isEnabled()) return;
+  if (isRevving || isRevDown || isShifting) return;
+
+  float modifier = imuControl.getSampleRateModifier();
+  if (modifier == 1.0f) return;
+
+  uint32_t modifiedRate = (uint32_t)(currentThrottleRate * modifier);
+  modifiedRate = constrain(modifiedRate, 8000, 44100);
+  player->setSampleRate(modifiedRate);
 }
 
 void SystemManager::startRev() {
   if (!isRevving && player) {
     isRevving = true;
     revStartTime = millis();
-    prevNormalRate = currentThrottleRate;  // Save current throttle position
+    prevNormalRate = currentThrottleRate;
     Serial.printf("🔊 Rev start! T=%lu, From: %d Hz\n", revStartTime, prevNormalRate);
   }
 }
@@ -386,10 +400,10 @@ void SystemManager::stopRev() {
 void SystemManager::triggerShift() {
   if (!isShifting && !isRevving && player) {
     shiftBaseRate = currentThrottleRate;
-    shiftTargetRate = (uint32_t)(currentThrottleRate * 1.3f);  // 130% dari rate saat ini (gear up)
+    shiftTargetRate = (uint32_t)(currentThrottleRate * 1.3f);
     shiftStartTime = millis();
     isShifting = true;
-    shiftPhase = 0;  // Reset phase
+    shiftPhase = 0;
     Serial.printf("⚙️ Gear shift start! %d -> %d Hz (30%% up)\n", shiftBaseRate, shiftTargetRate);
   }
 }
@@ -446,7 +460,7 @@ void SystemManager::updateShift() {
   unsigned long elapsed = millis() - shiftStartTime;
   uint32_t newRate = shiftBaseRate;
   
-  if (shiftPhase == 0) {  // Rise to target (150ms)
+  if (shiftPhase == 0) {
     if (elapsed < 150) {
       float progress = (float)elapsed / 150.0f;
       newRate = shiftBaseRate + (shiftTargetRate - shiftBaseRate) * progress;
@@ -455,13 +469,13 @@ void SystemManager::updateShift() {
       shiftStartTime = millis();
       newRate = shiftTargetRate;
     }
-  } else if (shiftPhase == 1) {  // Recovery to base rate (200ms)
+  } else if (shiftPhase == 1) {
     if (elapsed < 200) {
       float progress = (float)elapsed / 200.0f;
       newRate = shiftTargetRate - (shiftTargetRate - shiftBaseRate) * progress;
     } else {
       isShifting = false;
-      newRate = shiftBaseRate;  // Kembali ke rate awal
+      newRate = shiftBaseRate;
       Serial.println("✅ Shift complete");
     }
   }

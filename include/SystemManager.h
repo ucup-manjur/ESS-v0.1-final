@@ -114,6 +114,7 @@
 #include "ButtonManager.h"
 #include "LEDManager.h"
 #include "BLEControl.h"
+#include "IMUControl.h"
 
 enum SystemMode {
   MODE_NORMAL,
@@ -129,8 +130,10 @@ public:
   void updateBLE();
   void updateLEDs();
   void setCurrentThrottleRate(uint32_t rate) { currentThrottleRate = rate; }
-  bool isRevActive() { return isRevving || isRevDown; }
+  bool isRevActive()   { return isRevving || isRevDown; }
   bool isShiftActive() { return isShifting; }
+  void updateIMU();
+  void applyIMUModifier();
   
 private:
   AudioPlayer* player;
