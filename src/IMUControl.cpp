@@ -8,7 +8,7 @@ bool IMUControl::begin(uint8_t sda, uint8_t scl) {
 
   int status = icm.begin();
   if (status < 0) {
-    Serial.printf("❌ IMU ICM-20948 tidak ditemukan! Status: %d\n", status);
+    IMU_LOG("ICM-20948 tidak ditemukan! Status: %d", status);
     return false;
   }
 
@@ -16,7 +16,7 @@ bool IMUControl::begin(uint8_t sda, uint8_t scl) {
   icm.configAccel(ICM20948::ACCEL_RANGE_2G, ICM20948::ACCEL_DLPF_BANDWIDTH_111HZ);
 
   imuReady = true;
-  Serial.println("✅ IMU ICM-20948 ready");
+  IMU_LOG("ICM-20948 ready");
   return true;
 }
 
@@ -32,24 +32,36 @@ void IMUControl::update() {
 
   if (pitchDeg > uphillThreshold) {
     condition = SLOPE_UPHILL;
+    IMU_LOG("UPHILL   pitch=%.2f offset=%.2f", pitchDeg, pitchOffset);
   } else if (pitchDeg < -downhillThreshold) {
     condition = SLOPE_DOWNHILL;
+    IMU_LOG("DOWNHILL pitch=%.2f offset=%.2f", pitchDeg, pitchOffset);
   } else {
     condition = SLOPE_FLAT;
+    IMU_LOG("FLAT     pitch=%.2f offset=%.2f", pitchDeg, pitchOffset);
   }
 }
+
+// float IMUControl::readRawPitch() {
+//   icm.readSensor();
+//   float ax = icm.getAccelX_mss() / 9.807f;
+//   float ay = icm.getAccelY_mss() / 9.807f;
+//   float az = icm.getAccelZ_mss() / 9.807f;
+//   return atan2(ax, sqrt(ay * ay + az * az)) * 180.0f / M_PI;
+// }
 
 float IMUControl::readRawPitch() {
   icm.readSensor();
   float ax = icm.getAccelX_mss() / 9.807f;
   float ay = icm.getAccelY_mss() / 9.807f;
   float az = icm.getAccelZ_mss() / 9.807f;
-  return atan2(ax, sqrt(ay * ay + az * az)) * 180.0f / M_PI;
+  // Pakai ay sebagai axis utama (roll) karena IMU dipasang menyamping
+  return atan2(ay, sqrt(ax * ax + az * az)) * 180.0f / M_PI;
 }
 
 void IMUControl::calibrate() {
   if (!imuReady) {
-    Serial.println("⚠️ IMU belum siap, kalibrasi dibatalkan");
+    IMU_LOG("belum siap, kalibrasi dibatalkan");
     return;
   }
   // Rata-rata 10 sampel untuk hasil lebih stabil
@@ -59,13 +71,13 @@ void IMUControl::calibrate() {
     delay(20);
   }
   pitchOffset = sum / 10.0f;
-  Serial.printf("✅ IMU kalibrasi selesai, offset = %.2f°\n", pitchOffset);
+  IMU_LOG("kalibrasi selesai, offset=%.2f", pitchOffset);
 }
 
 float IMUControl::getSampleRateModifier() {
   if (!enabled) return 1.0f;
   switch (condition) {
-    case SLOPE_UPHILL:   return 0.88f; // Engine lebih berat, RPM turun ~12%
+    case SLOPE_UPHILL:   return 0.78f; // Engine lebih berat, RPM turun ~12%
     case SLOPE_DOWNHILL: return 1.12f; // Engine lebih ringan, RPM naik ~12%
     default:             return 1.0f;
   }

@@ -368,16 +368,41 @@ void SystemManager::updateIMU() {
 }
 
 void SystemManager::applyIMUModifier() {
-  if (!player || !imuControl.isEnabled()) return;
+  if (!player || !imuControl.isEnabled()) {
+    currentIMUModifier = 1.0f; // reset saat IMU off
+    return;
+  }
   if (isRevving || isRevDown || isShifting) return;
 
-  float modifier = imuControl.getSampleRateModifier();
-  if (modifier == 1.0f) return;
+  float targetModifier = imuControl.getSampleRateModifier();
 
-  uint32_t modifiedRate = (uint32_t)(currentThrottleRate * modifier);
+  // Lerp modifier perlahan menuju target
+  currentIMUModifier += (targetModifier - currentIMUModifier) * IMU_LERP_SPEED;
+
+  // Snap ke target jika sudah sangat dekat (hindari infinite approach)
+  if (fabsf(currentIMUModifier - targetModifier) < 0.001f) {
+    currentIMUModifier = targetModifier;
+  }
+
+  // Hanya apply jika ada perubahan berarti dari 1.0
+  if (fabsf(currentIMUModifier - 1.0f) < 0.001f) return;
+
+  uint32_t modifiedRate = (uint32_t)(currentThrottleRate * currentIMUModifier);
   modifiedRate = constrain(modifiedRate, 8000, 44100);
   player->setSampleRate(modifiedRate);
 }
+
+// void SystemManager::applyIMUModifier() {
+//   if (!player || !imuControl.isEnabled()) return;
+//   if (isRevving || isRevDown || isShifting) return;
+
+//   float modifier = imuControl.getSampleRateModifier();
+//   if (modifier == 1.0f) return;
+
+//   uint32_t modifiedRate = (uint32_t)(currentThrottleRate * modifier);
+//   modifiedRate = constrain(modifiedRate, 8000, 44100);
+//   player->setSampleRate(modifiedRate);
+// }
 
 void SystemManager::startRev() {
   if (!isRevving && player) {

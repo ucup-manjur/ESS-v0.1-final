@@ -137,6 +137,10 @@ public:
   
 private:
   AudioPlayer* player;
+
+  // IMU modifier smoothing
+  float currentIMUModifier = 1.0f;
+  const float IMU_LERP_SPEED = 0.05f; // 0.01=sangat lambat, 0.1=cepat
   
   // Simple rev variables
   bool isRevving = false;

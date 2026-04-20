@@ -3,6 +3,17 @@
 #include <Wire.h>
 #include "ICM20948.h"
 
+// Set 1 untuk aktifkan debug serial IMU
+#ifndef IMU_DEBUG
+#define IMU_DEBUG 0
+#endif
+
+#if IMU_DEBUG
+#define IMU_LOG(fmt, ...) Serial.printf("[IMU] " fmt "\n", ##__VA_ARGS__)
+#else
+#define IMU_LOG(fmt, ...)
+#endif
+
 enum SlopeCondition {
   SLOPE_FLAT     = 0,
   SLOPE_UPHILL   = 1,
@@ -27,11 +38,11 @@ public:
   float getCalibOffset()      { return pitchOffset; }
 
   // Threshold konfigurasi (derajat)
-  float uphillThreshold   = 5.0f;
-  float downhillThreshold = 5.0f;
+  float uphillThreshold   = 15.0f;
+  float downhillThreshold = 15.0f;
 
 private:
-  ICM20948 icm{Wire, 0x69}; // AD0 HIGH = 0x69, AD0 LOW = 0x68
+  ICM20948 icm{Wire, 0x68}; // AD0 HIGH = 0x69, AD0 LOW = 0x68
   bool  enabled     = false;
   bool  imuReady    = false;
   float pitchDeg    = 0.0f;  // pitch mentah

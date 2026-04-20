@@ -87,6 +87,9 @@
  * ============================================================================
  */
 
+// IMU Debug (0=OFF, 1=ON)
+#define IMU_DEBUG 1
+
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <esp_task_wdt.h>
@@ -100,17 +103,14 @@
 // MODE SELECTION
 // ============================================================================
 
-// #define DEV_MODE  // Use potentiometer for throttle
-#define OBD_MODE  // Use OBD2 for throttle
+#define DEV_MODE  // Use potentiometer for throttle
+// #define OBD_MODE  // Use OBD2 for throttle
 
 // Dynamic Slope (0=DISABLED/Fixed, 1=ENABLED/Dynamic)
 #define DYNAMIC_SLOPE 1
 
 // IMU Enable (0=DISABLED, 1=ENABLED)
-#define IMU_ENABLE 0
-
-// IMU Debug (0=OFF, 1=ON)
-#define IMU_DEBUG 0
+#define IMU_ENABLE 1
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -198,12 +198,13 @@ void setup() {
   sysManager.begin(&player);
   
 #if IMU_ENABLE
-  Serial.println("Starting IMU initialization...");
+  IMU_LOG("Starting IMU initialization...");
   delay(500);
   if (imuControl.begin()) {
-    Serial.println("✅ IMU enabled");
+    imuControl.setEnabled(true);
+    IMU_LOG("IMU enabled");
   } else {
-    Serial.println("⚠️ Continuing without IMU");
+    IMU_LOG("Continuing without IMU");
   }
 #else
   Serial.println("⚠️ IMU disabled (IMU_ENABLE=0)");
@@ -420,6 +421,8 @@ void BLETask(void* parameter) {
     sysManager.updateButtons();
     sysManager.updateBLE();
     sysManager.updateLEDs();
+    sysManager.updateIMU();        // ← tambah ini
+    sysManager.applyIMUModifier();
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
