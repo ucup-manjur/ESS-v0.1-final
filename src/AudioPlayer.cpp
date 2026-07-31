@@ -183,11 +183,12 @@ void AudioPlayer::setSampleRate(uint32_t rate) {
   }
 }
 
-// Update sample rate berdasarkan nilai ADC (0-4095)
+// Update sample rate berdasarkan nilai ADC (ADC_MIN_VALUE-ADC_MAX_VALUE)
 // Map ADC value ke range 8kHz - 44.1kHz
 void AudioPlayer::updateSampleRateFromADC(int adcValue) {
-  long rate = map(adcValue, 0, 4095, 8000, 44100);
-  if (rate > 44100) rate = 44100;  // Limit to 44.1kHz max
+  if (adcValue < ADC_MIN_VALUE) adcValue = ADC_MIN_VALUE;
+  if (adcValue > ADC_MAX_VALUE) adcValue = ADC_MAX_VALUE;
+  long rate = map(adcValue, ADC_MIN_VALUE, ADC_MAX_VALUE, 8000, 44100);
   setSampleRate(rate);
 }
 

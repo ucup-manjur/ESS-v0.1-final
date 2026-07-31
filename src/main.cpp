@@ -110,7 +110,7 @@
 #define DYNAMIC_SLOPE 1
 
 // IMU Enable (0=DISABLED, 1=ENABLED)
-#define IMU_ENABLE 1
+#define IMU_ENABLE 0
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -159,6 +159,7 @@ void BLETask(void* parameter);   // Task untuk BLE + LED + button (Core 1)
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
+  analogReadResolution(12);
   delay(500);
 
   // ============================================================================
@@ -304,7 +305,7 @@ void setup() {
 void ADCTask(void* parameter) {
   static unsigned long lastUpdate = 0;
   static int lastRaw = 0;
-  static int smoothedRaw = 0;
+  static int smoothedRaw = ADC_MIN_VALUE;
   static int targetRaw = 0;  // Target dari input
   
   esp_task_wdt_add(NULL);  // Add ADC task to watchdog
@@ -322,7 +323,9 @@ void ADCTask(void* parameter) {
       targetRaw = raw;
       
       int diff = targetRaw - smoothedRaw;
-      float throttlePercent = (float)smoothedRaw / 4095.0f;
+      // float throttlePercent = (float)smoothedRaw / 4095.0f;
+      float throttlePercent = (float)(smoothedRaw - ADC_MIN_VALUE) / (float)(ADC_MAX_VALUE - ADC_MIN_VALUE);
+      throttlePercent = constrain(throttlePercent, 0.0f, 1.0f);
       int slope;
       
       // Base slope by RPM zone
@@ -338,8 +341,11 @@ void ADCTask(void* parameter) {
       if (diff > 0) {
         // Accelerating: Apply lag
         // Aggressive input detection (sudden throttle)
+        // if (abs(diff) > slopeConfig.aggressiveThreshold) {
+        //   slope = (int)(slope * slopeConfig.accelLag);  // Slower on sudden gas
+        // }
         if (abs(diff) > slopeConfig.aggressiveThreshold) {
-          slope = (int)(slope * slopeConfig.accelLag);  // Slower on sudden gas
+          slope = (int)(slope / slopeConfig.accelLag);  // lebih responsif
         }
       } else {
         // Decelerating: Apply lag (engine inertia)
@@ -366,12 +372,12 @@ void ADCTask(void* parameter) {
       int modifiedRaw = smoothedRaw;
       
       if (abs(modifiedRaw - lastRaw) > 10) {
-        uint32_t rate = map(modifiedRaw, 0, 4095, 8000, 44100);
+        uint32_t rate = map(modifiedRaw, ADC_MIN_VALUE, ADC_MAX_VALUE, 8000, 44100);
         Serial.printf("🎯 ADC: %d -> %d Hz (slope: %d)\n", modifiedRaw, rate, slope);
         lastRaw = modifiedRaw;
       }
       
-      uint32_t throttleRate = map(modifiedRaw, 0, 4095, 8000, 44100);
+      uint32_t throttleRate = map(modifiedRaw, ADC_MIN_VALUE, ADC_MAX_VALUE, 8000, 44100);
       sysManager.setCurrentThrottleRate(throttleRate);
       if (!sysManager.isRevActive() && !sysManager.isShiftActive()) {
         player.updateSampleRateFromADC(modifiedRaw);

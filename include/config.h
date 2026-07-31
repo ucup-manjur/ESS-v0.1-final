@@ -95,15 +95,18 @@
 // Hardware
 #define AUDIO_DAC_PIN         25   // DAC1 (GPIO25)
 
-// #define THROTTLE_ADC_PIN      32   // example ADC pin (modify)
-// #define BUTTON_A_PIN          33
-// #define BUTTON_B_PIN          34
-// #define BUTTON_C_PIN          35
-
-#define THROTTLE_ADC_PIN      34   // example ADC pin LAWAS
+#define THROTTLE_ADC_PIN      32   // example ADC pin (modify)
 #define BUTTON_A_PIN          33
-#define BUTTON_B_PIN          32
+#define BUTTON_B_PIN          34
 #define BUTTON_C_PIN          35
+
+#define ADC_MIN_VALUE    880    // ADC saat throttle idle (ukur aktual)
+#define ADC_MAX_VALUE    3000   // ADC saat throttle full (ukur aktual)
+
+// #define THROTTLE_ADC_PIN      34   // example ADC pin LAWAS
+// #define BUTTON_A_PIN          33
+// #define BUTTON_B_PIN          32
+// #define BUTTON_C_PIN          35
 
 #define LED_1_PIN             4
 #define LED_2_PIN             13
