@@ -93,6 +93,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <esp_task_wdt.h>
+#include <esp_ota_ops.h>
 #include "config.h"
 #include "AudioPlayer.h"
 #include "SystemManager.h"
@@ -161,13 +162,29 @@ void setup() {
   Serial.begin(115200);
   analogReadResolution(12);
   delay(500);
+  LOG("ESS v" FW_VERSION);
+
+  // ============================================================================
+  // OTA ROLLBACK CHECK
+  // ============================================================================
+  // Kalau firmware baru berhasil boot sampai sini, tandai sebagai valid
+  // Kalau tidak ditandai valid dan watchdog timeout → rollback ke firmware lama
+  // ============================================================================
+  esp_ota_img_states_t otaState;
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (esp_ota_get_state_partition(running, &otaState) == ESP_OK) {
+    if (otaState == ESP_OTA_IMG_PENDING_VERIFY) {
+      esp_ota_mark_app_valid_cancel_rollback();
+      LOG("OTA valid");
+    }
+  }
 
   // ============================================================================
   // WATCHDOG TIMER INITIALIZATION
   // ============================================================================
   esp_task_wdt_init(30, true);  // 30s timeout, panic on timeout
-  esp_task_wdt_add(NULL);       // Add current task (setup/loop)
-  Serial.println("✅ Watchdog enabled (30s)");
+  // esp_task_wdt_add(NULL);
+  LOG("WDT OK");
 
   // ============================================================================
   // LITTLEFS INITIALIZATION
@@ -178,23 +195,23 @@ void setup() {
   uint8_t retries = 3;
   while (!LittleFS.begin(true) && retries > 0) {
     // amazonq-ignore-next-line
-    Serial.printf("❌ LittleFS gagal, retry %d/3...\n", 4 - retries);
+    LOG("FS FAIL retry %d", 4 - retries);
     delay(1000);
     retries--;
   }
   
   if (retries == 0) {
-    Serial.println("❌ LittleFS gagal setelah 3x retry, restart ESP...");
+    LOG("FS FAIL, restart");
     delay(2000);
     ESP.restart();
   }
-  Serial.println("✅ LittleFS OK");
+  LOG("FS OK");
 
 // ============================================================================
 // MODE-SPECIFIC INITIALIZATION
 // ============================================================================
 #ifdef DEV_MODE
-  Serial.println("🔧 DEV MODE - Using Potentiometer");
+  LOG("DEV MODE");
   player.begin();
   sysManager.begin(&player);
   
@@ -208,28 +225,28 @@ void setup() {
     IMU_LOG("Continuing without IMU");
   }
 #else
-  Serial.println("⚠️ IMU disabled (IMU_ENABLE=0)");
+  LOG("IMU disabled");
 #endif
 #endif
 
 #ifdef OBD_MODE
-  Serial.println("🚗 OBD MODE - Using OBD2 Data");
+  LOG("OBD MODE");
   player.begin();
   sysManager.begin(&player);
   obd2.begin();
   obd2.startTask();
-  Serial.println("✅ OBD2 system initialized");
+  LOG("OBD2 OK");
 
 #if IMU_ENABLE
-  Serial.println("Starting IMU initialization...");
+  LOG("Starting IMU initialization...");
   delay(500);
   if (imuControl.begin()) {
-    Serial.println("✅ IMU enabled");
+    LOG("✅ IMU enabled");
   } else {
-    Serial.println("⚠️ Continuing without IMU");
+    LOG("IMU FAIL");
   }
 #else
-  Serial.println("⚠️ IMU disabled (IMU_ENABLE=0)");
+  LOG("IMU disabled");
 #endif
 #endif
   
@@ -272,11 +289,9 @@ void setup() {
     0                  // Core 0
   );
   
-  Serial.println("✅ Dual core tasks started");
-  Serial.println("   ADC Task -> Core 0 (Priority 1)");
-  Serial.println("   BLE Task -> Core 1 (Priority 2)");
+  LOG("Tasks OK");
 #else
-  Serial.println("✅ BLE Task started on Core 1");
+  LOG("BLE task OK");           
 #endif
 }
 
@@ -317,6 +332,7 @@ void ADCTask(void* parameter) {
     
     if (now - lastUpdate >= 30) {
       int raw = analogRead(THROTTLE_ADC_PIN);
+      // LOG("ADC:%d", raw);
       
 #if DYNAMIC_SLOPE
       // Update target
@@ -339,11 +355,7 @@ void ADCTask(void* parameter) {
       
       // Acceleration vs Deceleration
       if (diff > 0) {
-        // Accelerating: Apply lag
-        // Aggressive input detection (sudden throttle)
-        // if (abs(diff) > slopeConfig.aggressiveThreshold) {
-        //   slope = (int)(slope * slopeConfig.accelLag);  // Slower on sudden gas
-        // }
+        // Accelerating: Apply lag, tapi lebih responsif kalau input mendadak (aggressive throttle)
         if (abs(diff) > slopeConfig.aggressiveThreshold) {
           slope = (int)(slope / slopeConfig.accelLag);  // lebih responsif
         }
@@ -369,15 +381,13 @@ void ADCTask(void* parameter) {
       }
 #endif
       
-      int modifiedRaw = smoothedRaw;
-      
-      if (abs(modifiedRaw - lastRaw) > 10) {
-        uint32_t rate = map(modifiedRaw, ADC_MIN_VALUE, ADC_MAX_VALUE, 8000, 44100);
-        Serial.printf("🎯 ADC: %d -> %d Hz (slope: %d)\n", modifiedRaw, rate, slope);
-        lastRaw = modifiedRaw;
-      }
-      
+      int modifiedRaw = constrain(smoothedRaw, ADC_MIN_VALUE, ADC_MAX_VALUE);
+
       uint32_t throttleRate = map(modifiedRaw, ADC_MIN_VALUE, ADC_MAX_VALUE, 8000, 44100);
+      if (abs(raw - lastRaw) > 10) {
+        lastRaw = raw;
+        LOG("ADC:%d smoothed:%d rate:%lu", raw, modifiedRaw, throttleRate);
+      }
       sysManager.setCurrentThrottleRate(throttleRate);
       if (!sysManager.isRevActive() && !sysManager.isShiftActive()) {
         player.updateSampleRateFromADC(modifiedRaw);

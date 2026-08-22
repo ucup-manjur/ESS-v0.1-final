@@ -42,14 +42,6 @@ void IMUControl::update() {
   }
 }
 
-// float IMUControl::readRawPitch() {
-//   icm.readSensor();
-//   float ax = icm.getAccelX_mss() / 9.807f;
-//   float ay = icm.getAccelY_mss() / 9.807f;
-//   float az = icm.getAccelZ_mss() / 9.807f;
-//   return atan2(ax, sqrt(ay * ay + az * az)) * 180.0f / M_PI;
-// }
-
 float IMUControl::readRawPitch() {
   icm.readSensor();
   float ax = icm.getAccelX_mss() / 9.807f;

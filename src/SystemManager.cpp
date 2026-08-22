@@ -1,5 +1,6 @@
 #include "SystemManager.h"
 #include "VolumeControl.h"
+#include "config.h"
 
 SystemManager::SystemManager() {}
 
@@ -11,7 +12,7 @@ void SystemManager::begin(AudioPlayer* audioPlayer) {
   
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
-  Serial.println("✅ System ready");
+  LOG("System OK");
 }
 
 void SystemManager::update() {
@@ -65,7 +66,7 @@ void SystemManager::handleNormalMode() {
   }
   
   if (buttons.isButtonCLongPress()) {
-    Serial.println("⚠️ Format hanya bisa dalam Programming Mode!");
+    // format only in programming mode
   }
 }
 
@@ -102,7 +103,7 @@ void SystemManager::switchRegister() {
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
   ble.sendCurrentPlaying();
-  Serial.printf("📍 Register: %d\n", currentRegister);
+  LOG("🎵 Register switched to: %d", currentRegister);
   
   if (currentMode == MODE_NORMAL && isPlaying) {
     loadCurrentSound();
@@ -115,31 +116,33 @@ void SystemManager::togglePlayback() {
   if (isPlaying) {
     leds.setRegister(currentRegister);
     loadCurrentSound();
-    Serial.println("▶️ Play");
+    LOG("▶️ Playback started (Register %d)", currentRegister);
   } else {
     leds.setAllOff();
     if (player) player->stopPlayback();
-    Serial.println("⏸️ Stop");
+    LOG("⏹️ Playback stopped");
   }
 }
 
 void SystemManager::enterProgrammingMode() {
   currentMode = MODE_PROGRAMMING;
+  ble.setCurrentMode(currentMode);
   leds.setBlinkMode(true);
   ble.enableFileTransfer(true);
-  ble.sendStatus(currentMode);
+  ble.sendStatus(currentMode, currentRegister, isPlaying);
   volumeControl.mute(false);
-  Serial.println("🛠️ Programming Mode - Audio muted");
+  LOG("🔧 Programming mode ON (Register %d)", currentRegister);
 }
 
 void SystemManager::exitProgrammingMode() {
   currentMode = MODE_NORMAL;
+  ble.setCurrentMode(currentMode);
   leds.setBlinkMode(false);
   leds.setRegister(currentRegister);
   ble.enableFileTransfer(false);
-  ble.sendStatus(currentMode);
+  ble.sendStatus(currentMode, currentRegister, isPlaying);
   volumeControl.mute(false);
-  Serial.println("🎮 Normal Mode - Audio restored");
+  LOG("✅ Programming mode OFF");
 }
 
 void SystemManager::handleBLECommands() {
@@ -148,42 +151,37 @@ void SystemManager::handleBLECommands() {
   uint8_t cmd = ble.getCommand();
   uint8_t* data = ble.getCommandData();
   
-  Serial.printf("🔍 Processing BLE command: 0x%02X\n", cmd);
-  
+  LOG("🔍 Processing BLE command: 0x%02X", cmd);
   switch(cmd) {
     case CMD_GEAR_UP:
+      LOG("⬆️ BLE Gear Up → Gear %d", currentGear + 1);
       triggerGearUp();
-      Serial.println("📱 BLE Gear Up");
       break;
       
     case CMD_GEAR_DOWN:
+      LOG("⬇️ BLE Gear Down → Gear %d", currentGear - 1);
       triggerGearDown();
-      Serial.println("📱 BLE Gear Down");
       break;
       
     case CMD_REV_START:
+      LOG("🔴 BLE Rev Start");
       startRev();
-      Serial.println("📱 BLE Rev Start");
       break;
       
     case CMD_REV_STOP:
+      LOG("🟢 BLE Rev Stop");
       stopRev();
-      Serial.println("📱 BLE Rev Stop");
       break;
       
     case CMD_VOL:
-      Serial.printf("🔊 CMD_VOL received, data length: %d, value: %d\n", ble.getCommandDataLength(), data[0]);
       if (ble.getCommandDataLength() > 0) {
         if (data[0] == 0) {
           volumeControl.toggleMute();
-          Serial.println("📱 BLE Toggle Mute");
+          LOG("🔇 BLE Toggle Mute");
         } else {
-          if (currentMode == MODE_NORMAL) {
-            volumeControl.mute(false);
-          }
+          if (currentMode == MODE_NORMAL) volumeControl.mute(false);
           volumeControl.setVolume(data[0]);
-          Serial.printf("📱 BLE Set Volume: %d%% (Mode: %s)\n", data[0],
-                       currentMode == MODE_PROGRAMMING ? "Programming" : "Normal");
+          LOG("🔊 BLE Volume: %d", data[0]);
         }
       }
       break;
@@ -201,26 +199,24 @@ void SystemManager::handleBLECommands() {
           leds.setRegister(currentRegister);
           loadCurrentSound();
         }
-        Serial.printf("📱 BLE Set Audio Play: Register %d\n", currentRegister);
+        LOG("📱 BLE Set Audio Play: Register %d", currentRegister);
       }
       break;
       
     case CMD_TOGGLE_AUTO_SHIFT:
-      Serial.println("📱 Auto Shift (disabled)");
       break;
       
     case CMD_REQ_FILE_INFO:
+      LOG("📱 BLE Request File Info");
       ble.sendCurrentPlaying();
-      Serial.println("📱 BLE Request File Info");
       break;
       
     case CMD_REQ_FILE_LIST:
+      LOG("📱 BLE Request All File Lists");
       if (ble.getCommandDataLength() > 0 && data[0] >= 1 && data[0] <= 4) {
         ble.replyFileList(data[0]);
-        Serial.printf("📱 BLE Request File List: Register %d\n", data[0]);
       } else {
         ble.replyFileList(0);
-        Serial.println("📱 BLE Request All File Lists");
       }
       break;
       
@@ -230,60 +226,52 @@ void SystemManager::handleBLECommands() {
         if (data[0] >= 1 && data[0] <= 3) {
           ble.deleteFile((String(folders[data[0]]) + "/upload.tmp").c_str());
           ble.listAllAudioFiles();
-          Serial.printf("📱 BLE Delete File: folder %d\n", data[0]);
         }
       }
       break;
       
     case CMD_REQ_STATUS:
-      ble.sendStatus(currentMode);
-      Serial.println("📱 BLE Status Request");
+      LOG("[BLE] Status requested");
+      ble.sendStatus(currentMode, currentRegister, isPlaying);
       break;
       
     case CMD_REQ_OBD2_STATUS:
       ble.sendOBD2Status();
-      Serial.println("📱 BLE OBD2 Status Request");
       break;
-      
     case CMD_REQ_OBD2_SOH:
       ble.sendOBD2SOH();
-      Serial.println("📱 BLE OBD2 SoH Request");
       break;
-      
     case CMD_REQ_OBD2_TEMP:
       ble.sendOBD2Temp();
-      Serial.println("📱 BLE OBD2 Temp Request");
       break;
-      
     case CMD_REQ_OBD2_STEERING:
       ble.sendOBD2Steering();
-      Serial.println("📱 BLE OBD2 Steering Request");
       break;
-      
     case CMD_REQ_OBD2_POWER:
       ble.sendOBD2Power();
-      Serial.println("📱 BLE OBD2 Power Request");
       break;
       
     case CMD_IMU_TOGGLE:
       imuControl.setEnabled(!imuControl.isEnabled());
+      LOG("🧭 IMU %s", imuControl.isEnabled() ? "ON" : "OFF");
       ble.sendIMUStatus();
-      Serial.printf("📱 IMU %s\n", imuControl.isEnabled() ? "ON" : "OFF");
       break;
-
     case CMD_REQ_IMU_STATUS:
+      LOG("🧭 IMU status requested");
       ble.sendIMUStatus();
-      Serial.println("📱 IMU Status Request");
       break;
-
     case CMD_IMU_CALIBRATE:
+      LOG("🧭 IMU calibrate");
       imuControl.calibrate();
-      ble.sendIMUStatus(); // kirim status terbaru setelah kalibrasi
-      Serial.println("📱 IMU Calibrate");
+      ble.sendIMUStatus();
+      break;
+    case CMD_REQ_FW_VER:
+      LOG("📦 FW version requested");
+      ble.sendFWVersion();
       break;
       
     default:
-      Serial.printf("⚠️ Unknown BLE command: 0x%02X\n", cmd);
+      LOG("CMD unknown:0x%02X", cmd);
       break;
   }
   
@@ -293,10 +281,7 @@ void SystemManager::handleBLECommands() {
 void SystemManager::loadCurrentSound() {
   if (!player) return;
   
-  if (currentMode == MODE_PROGRAMMING) {
-    Serial.println("⚠️ Cannot load sound in programming mode");
-    return;
-  }
+  if (currentMode == MODE_PROGRAMMING) return;
   
   String folderPath;
   if (currentRegister == 1) {
@@ -305,13 +290,15 @@ void SystemManager::loadCurrentSound() {
     folderPath = "/Audio" + String(currentRegister - 1);
   }
   
+  LOG("🔍 Loading sound from: %s", folderPath.c_str());
+  
   String filename = "";
   File dir = LittleFS.open(folderPath);
   if (dir && dir.isDirectory()) {
     File file = dir.openNextFile();
     while (file) {
       if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
-        filename = folderPath + "/" + file.name();
+        filename = String(file.name());
         break;
       }
       file = dir.openNextFile();
@@ -321,14 +308,14 @@ void SystemManager::loadCurrentSound() {
   
   if (filename != "" && player->loadFile(filename.c_str())) {
     player->startPlayback();
-    Serial.printf("✅ Loaded: %s\n", filename.c_str());
+    LOG("✅ Loaded: %s", filename.c_str());
   } else {
-    Serial.printf("⚠️ File tidak ada di: %s\n", folderPath.c_str());
+    LOG("❌ No file in: %s", folderPath.c_str());
   }
 }
 
 void SystemManager::formatLittleFS() {
-  Serial.println("🚨 TOMBOL 3 DITEKAN 5 DETIK - FORMAT LITTLEFS!");
+  LOG("FORMAT FS");
   ble.formatLittleFS();
 }
 
@@ -349,10 +336,11 @@ void SystemManager::deleteCurrentRegisterFile() {
     File file = dir.openNextFile();
     while (file) {
       if (!file.isDirectory()) {
-        String filePath = folderPath + "/" + file.name();
+        // String filePath = folderPath + "/" + file.name();
+        String filePath = String(file.name());
         file.close();
         LittleFS.remove(filePath);
-        Serial.printf("🗑️ Deleted: %s\n", filePath.c_str());
+        LOG("DEL:%s", filePath.c_str());
       }
       file = dir.openNextFile();
     }
@@ -360,7 +348,7 @@ void SystemManager::deleteCurrentRegisterFile() {
   }
   
   leds.setFastBlink(2000);
-  Serial.printf("✅ Register %d files deleted\n", currentRegister);
+  LOG("DEL reg%d", currentRegister);
 }
 
 void SystemManager::updateIMU() {
@@ -392,24 +380,12 @@ void SystemManager::applyIMUModifier() {
   player->setSampleRate(modifiedRate);
 }
 
-// void SystemManager::applyIMUModifier() {
-//   if (!player || !imuControl.isEnabled()) return;
-//   if (isRevving || isRevDown || isShifting) return;
-
-//   float modifier = imuControl.getSampleRateModifier();
-//   if (modifier == 1.0f) return;
-
-//   uint32_t modifiedRate = (uint32_t)(currentThrottleRate * modifier);
-//   modifiedRate = constrain(modifiedRate, 8000, 44100);
-//   player->setSampleRate(modifiedRate);
-// }
-
 void SystemManager::startRev() {
   if (!isRevving && player) {
     isRevving = true;
     revStartTime = millis();
     prevNormalRate = currentThrottleRate;
-    Serial.printf("🔊 Rev start! T=%lu, From: %d Hz\n", revStartTime, prevNormalRate);
+    LOG("🔴 Rev start (base rate: %lu)", prevNormalRate);
   }
 }
 
@@ -418,7 +394,7 @@ void SystemManager::stopRev() {
     isRevving = false;
     isRevDown = true;
     revDownStartTime = millis();
-    Serial.printf("⛔ Rev down start: %d -> %d Hz\n", revTargetRate, prevNormalRate);
+    LOG("🟢 Rev stop → rev down");
   }
 }
 
@@ -429,27 +405,26 @@ void SystemManager::triggerShift() {
     shiftStartTime = millis();
     isShifting = true;
     shiftPhase = 0;
-    Serial.printf("⚙️ Gear shift start! %d -> %d Hz (30%% up)\n", shiftBaseRate, shiftTargetRate);
   }
 }
 
 void SystemManager::triggerGearUp() {
   if (currentGear < maxGear && !isShifting && !isRevving) {
     currentGear++;
+    LOG("⬆️ Gear Up → %d", currentGear);
     triggerShift();
-    Serial.printf("⬆️ Gear UP -> %d\n", currentGear);
   } else if (currentGear >= maxGear) {
-    Serial.printf("⚠️ Max gear (%d)\n", maxGear);
+    LOG("⚠️ Already at max gear (%d)", maxGear);
   }
 }
 
 void SystemManager::triggerGearDown() {
   if (currentGear > 1 && !isShifting && !isRevving) {
     currentGear--;
+    LOG("⬇️ Gear Down → %d", currentGear);
     triggerShift();
-    Serial.printf("⬇️ Gear DOWN -> %d\n", currentGear);
   } else if (currentGear <= 1) {
-    Serial.println("⚠️ Min gear (1)");
+    LOG("⚠️ Already at min gear");
   }
 }
 
@@ -474,7 +449,6 @@ void SystemManager::updateRev() {
     } else {
       player->setSampleRate(prevNormalRate);
       isRevDown = false;
-      Serial.println("✅ Turun selesai, balik idle");
     }
   }
 }
@@ -501,7 +475,6 @@ void SystemManager::updateShift() {
     } else {
       isShifting = false;
       newRate = shiftBaseRate;
-      Serial.println("✅ Shift complete");
     }
   }
   

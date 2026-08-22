@@ -142,10 +142,13 @@
 #pragma once
 #include <NimBLEDevice.h>
 #include <LittleFS.h>
+#include <esp_ota_ops.h>
+#include "config.h"
 
 #define SERVICE_UUID        "12345678-1234-1234-1234-1234567890ab"
 #define CHARACTERISTIC_UUID "87654321-4321-4321-4321-0987654321ab"
 #define FILE_CHARACTERISTIC_UUID "87654321-4321-4321-4321-0987654321cd"
+#define OTA_CHARACTERISTIC_UUID  "87654321-4321-4321-4321-0987654321ef"
 
 // Command definitions untuk kontrol
 #define CMD_GEAR_UP          0x01
@@ -187,6 +190,13 @@
 #define CMD_REQ_IMU_STATUS 0x61
 #define CMD_IMU_CALIBRATE  0x62
 
+// OTA commands
+#define CMD_OTA_START      0x70
+#define CMD_OTA_DATA       0x71
+#define CMD_OTA_END        0x72
+#define CMD_OTA_ABORT      0x73
+#define CMD_REQ_FW_VER     0x74
+
 extern const int MAX_GEAR;
 extern const int MIN_GEAR;
 
@@ -219,6 +229,7 @@ public:
   void deleteFolder(const char* folderpath);
   void formatLittleFS();
   void setCurrentRegister(uint8_t reg);
+  void setCurrentMode(uint8_t mode);
   String getCurrentRegisterFolder();
   void sendStatus(uint8_t mode, uint8_t reg = 0, bool playing = false);
   void sendBLEResponse(String response);
@@ -228,7 +239,12 @@ public:
   void sendOBD2Steering();
   void sendOBD2Power();
   void sendIMUStatus();
-  
+  void sendFWVersion();
+  void startOTA(uint32_t fileSize);
+  void writeOTAData(const uint8_t* data, size_t len);
+  void endOTA();
+  void abortOTA();
+
 private:
   static NimBLECharacteristic* pCharacteristic;
   static NimBLECharacteristic* pFileCharacteristic;
@@ -236,6 +252,7 @@ private:
   static uint8_t commandData[512];
   static size_t commandDataLen;
   static bool commandReady;
+  static bool needsAdvertising;
   static BLEControl* instance;
   
   bool fileReceiving = false;
@@ -244,6 +261,14 @@ private:
   String originalFilename;
   File tmpFile;
   uint8_t currentRegister = 1;
+  uint8_t currentMode = 0;
+
+  // OTA state
+  static NimBLECharacteristic* pOTACharacteristic;
+  bool otaReceiving = false;
+  esp_ota_handle_t otaHandle = 0;
+  uint32_t otaTotalSize = 0;
+  uint32_t otaBytesWritten = 0;
   
   class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer);
@@ -252,9 +277,14 @@ private:
   
   class CharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic);
+    void onSubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc, uint16_t subValue);
   };
   
   class FileCharacteristicCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic);
+  };
+
+  class OTACharacteristicCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic);
   };
 };

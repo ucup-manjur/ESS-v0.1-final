@@ -133,3 +133,14 @@
 #define DEFAULT_ACCEL_LAG          0.7f  // Acceleration lag (0.5=slow, 1.0=instant)
 #define DEFAULT_DECEL_LAG          0.6f  // Deceleration lag (0.5=slow, 1.0=instant)
 #define DEFAULT_AGGRESSIVE_THRESH  1000  // Threshold for sudden throttle detection
+
+// Firmware version
+#define FW_VERSION  "1.0.0"
+
+// Logging (0=OFF production, 1=ON development)
+#define ESS_LOG_ENABLE 1
+#if ESS_LOG_ENABLE
+  #define LOG(fmt, ...) Serial.printf(fmt "\n", ##__VA_ARGS__)
+#else
+  #define LOG(fmt, ...)
+#endif

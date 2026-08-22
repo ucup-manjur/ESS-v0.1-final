@@ -135,4 +135,5 @@ private:
   static volatile uint32_t index;
   static volatile uint32_t currentSampleRate;
   static VolumeControl* volumeCtrl;
+  static portMUX_TYPE rateMux;
 };

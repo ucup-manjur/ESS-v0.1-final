@@ -8,6 +8,7 @@ volatile uint32_t AudioPlayer::audioLength = 0;
 volatile uint32_t AudioPlayer::index = 0;
 volatile uint32_t AudioPlayer::currentSampleRate = 8000;
 VolumeControl* AudioPlayer::volumeCtrl = nullptr;
+portMUX_TYPE AudioPlayer::rateMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Konstruktor AudioPlayer
 AudioPlayer::AudioPlayer() {}
@@ -28,10 +29,7 @@ void AudioPlayer::normalizePCM8(uint8_t *data, size_t length) {
   if (!data || length == 0) return;
   
   // Bounds check
-  if (length > audioLength) {
-    Serial.println("❌ Normalization: length exceeds buffer!");
-    return;
-  }
+  if (length > audioLength) return;
 
   uint8_t maxValue = 0;
   uint8_t minValue = 255;
@@ -104,6 +102,8 @@ void AudioPlayer::begin() {
   volumeControl.begin();
   volumeCtrl = &volumeControl;  // Set static pointer for ISR access
 
+  LOG("✅ Audio Player initialized (DAC pin %d, 8kHz)", AUDIO_DAC_PIN);
+
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &AudioPlayer::onTimerISR, true);
   timerAlarmWrite(timer, 1000000 / 8000, true); // default 8kHz (idle)
@@ -120,11 +120,12 @@ bool AudioPlayer::loadFile(const char *path) {
   
   File f = LittleFS.open(path, "r");
   if (!f) {
-    Serial.printf("❌ Gagal buka %s\n", path);
+    LOG("❌ File not found: %s", path);
     return restoreTimer(false);
   }
 
   audioLength = f.size();
+  LOG("📂 Loading: %s (%lu bytes)", path, audioLength);
   if (!isValidFileSize(audioLength, MAX_FILE_SIZE)) {
     f.close();
     return restoreTimer(false);
@@ -133,8 +134,7 @@ bool AudioPlayer::loadFile(const char *path) {
   // Memory check BEFORE allocation
   uint32_t freeHeap = ESP.getFreeHeap();
   if (freeHeap < audioLength + MIN_FREE_HEAP) {
-    Serial.printf("❌ Not enough memory! Need: %lu, Free: %lu\n", 
-                  audioLength + MIN_FREE_HEAP, freeHeap);
+    LOG("❌ Not enough heap: need %lu, free %lu", audioLength + MIN_FREE_HEAP, freeHeap);
     audioLength = 0;
     f.close();
     return restoreTimer(false);
@@ -149,8 +149,7 @@ bool AudioPlayer::loadFile(const char *path) {
   normalizePCM8((uint8_t*)audioBuffer, audioLength);
   index = 0;
   
-  Serial.printf("✅ Loaded + normalized: %s (%lu bytes, Free: %lu)\n", 
-                path, audioLength, ESP.getFreeHeap());
+  LOG("✅ Loaded OK: %s (%lu bytes, heap free: %lu)", path, audioLength, ESP.getFreeHeap());
   return restoreTimer(true);
 }
 
@@ -158,12 +157,14 @@ bool AudioPlayer::loadFile(const char *path) {
 void AudioPlayer::startPlayback() {
   index = 0;
   volumeControl.mute(false);
+  LOG("▶️ Playback started");
 }
 
 // Stop playback dan set DAC ke posisi idle (128)
 void AudioPlayer::stopPlayback() {
   volumeControl.mute(true);
   dacWrite(AUDIO_DAC_PIN, 128);
+  LOG("⏹️ Playback stopped");
 }
 
 // Set sample rate audio (8kHz - 44.1kHz)
@@ -174,6 +175,9 @@ void AudioPlayer::setSampleRate(uint32_t rate) {
   if (rate < 8000) rate = 8000;
   if (rate > 44100) rate = 44100;
 
+  // Critical section: ADCTask (Core 0) dan BLETask (Core 1, IMU) bisa
+  // memanggil ini bersamaan; lindungi read-check-write + reconfig timer.
+  portENTER_CRITICAL(&rateMux);
   // Only update timer if sample rate actually changed
   if (rate != currentSampleRate) {
     currentSampleRate = rate;
@@ -181,6 +185,7 @@ void AudioPlayer::setSampleRate(uint32_t rate) {
     timerAlarmWrite(timer, 1000000 / rate, true);
     timerAlarmEnable(timer);
   }
+  portEXIT_CRITICAL(&rateMux);
 }
 
 // Update sample rate berdasarkan nilai ADC (ADC_MIN_VALUE-ADC_MAX_VALUE)
@@ -223,7 +228,7 @@ void AudioPlayer::cleanupAudioBuffer() {
 
 bool AudioPlayer::isValidFileSize(uint32_t size, uint32_t maxSize) {
   if (size == 0 || size > maxSize) {
-    Serial.printf("❌ Ukuran file invalid: %lu bytes\n", size);
+    LOG("❌ Invalid file size: %lu (max: %lu)", size, maxSize);
     audioLength = 0;
     return false;
   }
@@ -233,17 +238,18 @@ bool AudioPlayer::isValidFileSize(uint32_t size, uint32_t maxSize) {
 bool AudioPlayer::allocateBuffer() {
   audioBuffer = (uint8_t *)malloc(audioLength);
   if (!audioBuffer) {
-    Serial.println("❌ RAM tidak cukup");
+    LOG("❌ malloc failed for %lu bytes", audioLength);
     audioLength = 0;
     return false;
   }
+  LOG("💾 Buffer allocated: %lu bytes", audioLength);
   return true;
 }
 
 bool AudioPlayer::readFileData(File& f) {
   size_t bytesRead = f.read((uint8_t*)audioBuffer, audioLength);
   if (bytesRead != audioLength) {
-    Serial.printf("❌ Read error: expected %lu, got %lu\n", audioLength, bytesRead);
+    LOG("❌ Read error: expected %lu, got %lu", audioLength, bytesRead);
     cleanupAudioBuffer();
     return false;
   }
