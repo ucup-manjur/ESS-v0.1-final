@@ -14,13 +14,13 @@ void LEDManager::begin() {
   if (LED_1_PIN < 0 || LED_1_PIN > 39 ||
       LED_2_PIN < 0 || LED_2_PIN > 39 ||
       LED_3_PIN < 0 || LED_3_PIN > 39) {
-    Serial.println("❌ LED pins invalid!");
+    LOG("[LED] pins invalid!");
     return;
   }
   
   // Cek pin conflict
   if (LED_1_PIN == LED_2_PIN || LED_1_PIN == LED_3_PIN || LED_2_PIN == LED_3_PIN) {
-    Serial.println("❌ LED pins conflict!");
+    LOG("[LED] pins conflict!");
     return;
   }
   
@@ -29,7 +29,7 @@ void LEDManager::begin() {
   pinMode(LED_3_PIN, OUTPUT);
   setAllOff();
   
-  Serial.println("✅ LED Manager initialized");
+  LOG("[LED] Manager initialized");
 }
 
 

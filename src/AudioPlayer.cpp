@@ -9,6 +9,10 @@ volatile uint32_t AudioPlayer::index = 0;
 volatile uint32_t AudioPlayer::currentSampleRate = 8000;
 VolumeControl* AudioPlayer::volumeCtrl = nullptr;
 portMUX_TYPE AudioPlayer::rateMux = portMUX_INITIALIZER_UNLOCKED;
+TaskHandle_t* AudioPlayer::adcTaskHandle = nullptr;
+volatile bool AudioPlayer::isLoading = false;
+volatile uint32_t AudioPlayer::isrCounter = 0;
+
 
 // Konstruktor AudioPlayer
 AudioPlayer::AudioPlayer() {}
@@ -65,6 +69,7 @@ void AudioPlayer::normalizePCM8(uint8_t *data, size_t length) {
 // ISR timer untuk output audio ke DAC
 // Dipanggil setiap interval sample rate (misal 16kHz = tiap 62.5μs)
 void IRAM_ATTR AudioPlayer::onTimerISR() {
+  isrCounter++; 
   if (!audioBuffer || audioLength == 0 || !volumeCtrl) {
     dacWrite(AUDIO_DAC_PIN, 128);
     return;
@@ -102,7 +107,7 @@ void AudioPlayer::begin() {
   volumeControl.begin();
   volumeCtrl = &volumeControl;  // Set static pointer for ISR access
 
-  LOG("✅ Audio Player initialized (DAC pin %d, 8kHz)", AUDIO_DAC_PIN);
+  LOG("[AP] Audio Player initialized (DAC pin %d, 8kHz)", AUDIO_DAC_PIN);
 
   timer = timerBegin(0, 80, true);
   timerAttachInterrupt(timer, &AudioPlayer::onTimerISR, true);
@@ -111,66 +116,76 @@ void AudioPlayer::begin() {
 }
 
 bool AudioPlayer::loadFile(const char *path) {
-  const uint32_t MAX_FILE_SIZE = 1048576; // 1MB
-  const uint32_t MIN_FREE_HEAP = 50000;   // Reserve 50KB
-  
+  const uint32_t MAX_FILE_SIZE = 1048576;
+  const uint32_t MIN_FREE_HEAP = 50000;
+
+  isLoading = true;
   if (timer) timerAlarmDisable(timer);
-  
   cleanupAudioBuffer();
-  
+
   File f = LittleFS.open(path, "r");
   if (!f) {
-    LOG("❌ File not found: %s", path);
-    return restoreTimer(false);
+    LOG("[AP] File not found: %s", path);
+    isLoading = false;
+    if (timer) timerAlarmEnable(timer);
+    return false;
   }
 
   audioLength = f.size();
-  LOG("📂 Loading: %s (%lu bytes)", path, audioLength);
+  LOG("[AP] Loading: %s (%lu bytes)", path, audioLength);
   if (!isValidFileSize(audioLength, MAX_FILE_SIZE)) {
     f.close();
-    return restoreTimer(false);
+    isLoading = false;
+    if (timer) timerAlarmEnable(timer);
+    return false;
   }
-  
-  // Memory check BEFORE allocation
+
   uint32_t freeHeap = ESP.getFreeHeap();
   if (freeHeap < audioLength + MIN_FREE_HEAP) {
-    LOG("❌ Not enough heap: need %lu, free %lu", audioLength + MIN_FREE_HEAP, freeHeap);
+    LOG("[AP] Not enough heap: need %lu, free %lu", audioLength + MIN_FREE_HEAP, freeHeap);
     audioLength = 0;
     f.close();
-    return restoreTimer(false);
+    isLoading = false;
+    if (timer) timerAlarmEnable(timer);
+    return false;
   }
-  
+
   if (!allocateBuffer() || !readFileData(f)) {
     f.close();
-    return restoreTimer(false);
+    isLoading = false;
+    if (timer) timerAlarmEnable(timer);
+    return false;
   }
-  
+
   f.close();
   normalizePCM8((uint8_t*)audioBuffer, audioLength);
   index = 0;
-  
-  LOG("✅ Loaded OK: %s (%lu bytes, heap free: %lu)", path, audioLength, ESP.getFreeHeap());
-  return restoreTimer(true);
+
+  LOG("[AP] Loaded OK: %s (%lu bytes, heap free: %lu)", path, audioLength, ESP.getFreeHeap());
+  isLoading = false;
+  if (timer) timerAlarmEnable(timer);
+  return true;
 }
 
 // Mulai playback audio dari awal buffer
 void AudioPlayer::startPlayback() {
   index = 0;
   volumeControl.mute(false);
-  LOG("▶️ Playback started");
+  // timerAlarmEnable(timer);
+  LOG("[AP] Playback started");
 }
 
 // Stop playback dan set DAC ke posisi idle (128)
 void AudioPlayer::stopPlayback() {
   volumeControl.mute(true);
   dacWrite(AUDIO_DAC_PIN, 128);
-  LOG("⏹️ Playback stopped");
+  LOG("[AP] Playback stopped");
 }
 
 // Set sample rate audio (8kHz - 44.1kHz)
 // Mengubah interval timer sesuai rate yang diinginkan
 void AudioPlayer::setSampleRate(uint32_t rate) {
-  if (!timer) return;
+  if (!timer || isLoading) return;
 
   if (rate < 8000) rate = 8000;
   if (rate > 44100) rate = 44100;
@@ -228,7 +243,7 @@ void AudioPlayer::cleanupAudioBuffer() {
 
 bool AudioPlayer::isValidFileSize(uint32_t size, uint32_t maxSize) {
   if (size == 0 || size > maxSize) {
-    LOG("❌ Invalid file size: %lu (max: %lu)", size, maxSize);
+    LOG("[AP] Invalid file size: %lu (max: %lu)", size, maxSize);
     audioLength = 0;
     return false;
   }
@@ -238,18 +253,18 @@ bool AudioPlayer::isValidFileSize(uint32_t size, uint32_t maxSize) {
 bool AudioPlayer::allocateBuffer() {
   audioBuffer = (uint8_t *)malloc(audioLength);
   if (!audioBuffer) {
-    LOG("❌ malloc failed for %lu bytes", audioLength);
+    LOG("[AP] malloc failed for %lu bytes", audioLength);
     audioLength = 0;
     return false;
   }
-  LOG("💾 Buffer allocated: %lu bytes", audioLength);
+  LOG("[AP] Buffer allocated: %lu bytes", audioLength);
   return true;
 }
 
 bool AudioPlayer::readFileData(File& f) {
   size_t bytesRead = f.read((uint8_t*)audioBuffer, audioLength);
   if (bytesRead != audioLength) {
-    LOG("❌ Read error: expected %lu, got %lu", audioLength, bytesRead);
+    LOG("[AP] Read error: expected %lu, got %lu", audioLength, bytesRead);
     cleanupAudioBuffer();
     return false;
   }
@@ -257,7 +272,7 @@ bool AudioPlayer::readFileData(File& f) {
 }
 
 bool AudioPlayer::restoreTimer(bool success) {
-  if (timer) timerAlarmEnable(timer);
+  // if (timer) timerAlarmEnable(timer);
   return success;
 }
 

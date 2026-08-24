@@ -12,7 +12,7 @@ void SystemManager::begin(AudioPlayer* audioPlayer) {
   
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
-  LOG("System OK");
+  LOG("[SYS] System OK");
 }
 
 void SystemManager::update() {
@@ -103,7 +103,7 @@ void SystemManager::switchRegister() {
   leds.setRegister(currentRegister);
   ble.setCurrentRegister(currentRegister);
   ble.sendCurrentPlaying();
-  LOG("🎵 Register switched to: %d", currentRegister);
+  LOG("[SYS] Register switched to: %d", currentRegister);
   
   if (currentMode == MODE_NORMAL && isPlaying) {
     loadCurrentSound();
@@ -116,11 +116,11 @@ void SystemManager::togglePlayback() {
   if (isPlaying) {
     leds.setRegister(currentRegister);
     loadCurrentSound();
-    LOG("▶️ Playback started (Register %d)", currentRegister);
+    LOG("[SYS] Playback started (Register %d)", currentRegister);
   } else {
     leds.setAllOff();
     if (player) player->stopPlayback();
-    LOG("⏹️ Playback stopped");
+    LOG("[SYS] Playback stopped");
   }
 }
 
@@ -131,7 +131,7 @@ void SystemManager::enterProgrammingMode() {
   ble.enableFileTransfer(true);
   ble.sendStatus(currentMode, currentRegister, isPlaying);
   volumeControl.mute(false);
-  LOG("🔧 Programming mode ON (Register %d)", currentRegister);
+  LOG("[SYS] Programming mode ON (Register %d)", currentRegister);
 }
 
 void SystemManager::exitProgrammingMode() {
@@ -142,7 +142,7 @@ void SystemManager::exitProgrammingMode() {
   ble.enableFileTransfer(false);
   ble.sendStatus(currentMode, currentRegister, isPlaying);
   volumeControl.mute(false);
-  LOG("✅ Programming mode OFF");
+  LOG("[SYS] Programming mode OFF");
 }
 
 void SystemManager::handleBLECommands() {
@@ -151,25 +151,25 @@ void SystemManager::handleBLECommands() {
   uint8_t cmd = ble.getCommand();
   uint8_t* data = ble.getCommandData();
   
-  LOG("🔍 Processing BLE command: 0x%02X", cmd);
+  LOG("[SYS] Processing BLE command: 0x%02X", cmd);
   switch(cmd) {
     case CMD_GEAR_UP:
-      LOG("⬆️ BLE Gear Up → Gear %d", currentGear + 1);
+      LOG("[BLE] Gear Up → Gear %d", currentGear + 1);
       triggerGearUp();
       break;
       
     case CMD_GEAR_DOWN:
-      LOG("⬇️ BLE Gear Down → Gear %d", currentGear - 1);
+      LOG("[BLE] Gear Down → Gear %d", currentGear - 1);
       triggerGearDown();
       break;
       
     case CMD_REV_START:
-      LOG("🔴 BLE Rev Start");
+      LOG("[BLE] Rev Start");
       startRev();
       break;
       
     case CMD_REV_STOP:
-      LOG("🟢 BLE Rev Stop");
+      LOG("[BLE] Rev Stop");
       stopRev();
       break;
       
@@ -177,11 +177,11 @@ void SystemManager::handleBLECommands() {
       if (ble.getCommandDataLength() > 0) {
         if (data[0] == 0) {
           volumeControl.toggleMute();
-          LOG("🔇 BLE Toggle Mute");
+          LOG("[BLE] Toggle Mute");
         } else {
           if (currentMode == MODE_NORMAL) volumeControl.mute(false);
           volumeControl.setVolume(data[0]);
-          LOG("🔊 BLE Volume: %d", data[0]);
+          LOG("[BLE] Volume: %d", data[0]);
         }
       }
       break;
@@ -199,7 +199,7 @@ void SystemManager::handleBLECommands() {
           leds.setRegister(currentRegister);
           loadCurrentSound();
         }
-        LOG("📱 BLE Set Audio Play: Register %d", currentRegister);
+        LOG("[BLE] Set Audio Play: Register %d", currentRegister);
       }
       break;
       
@@ -207,12 +207,12 @@ void SystemManager::handleBLECommands() {
       break;
       
     case CMD_REQ_FILE_INFO:
-      LOG("📱 BLE Request File Info");
+      LOG("[BLE] Request File Info");
       ble.sendCurrentPlaying();
       break;
       
     case CMD_REQ_FILE_LIST:
-      LOG("📱 BLE Request All File Lists");
+      LOG("[BLE] Request All File Lists");
       if (ble.getCommandDataLength() > 0 && data[0] >= 1 && data[0] <= 4) {
         ble.replyFileList(data[0]);
       } else {
@@ -222,7 +222,7 @@ void SystemManager::handleBLECommands() {
       
     case CMD_DELETE_FILE:
       if (ble.getCommandDataLength() > 0) {
-        const char* folders[] = {"", "/audio/engine", "/audio/shift", "/audio/effects"};
+        const char* folders[] = {"", "/Audio/engine", "/Audio/shift", "/Audio/effects"};
         if (data[0] >= 1 && data[0] <= 3) {
           ble.deleteFile((String(folders[data[0]]) + "/upload.tmp").c_str());
           ble.listAllAudioFiles();
@@ -253,25 +253,25 @@ void SystemManager::handleBLECommands() {
       
     case CMD_IMU_TOGGLE:
       imuControl.setEnabled(!imuControl.isEnabled());
-      LOG("🧭 IMU %s", imuControl.isEnabled() ? "ON" : "OFF");
+      LOG("[BLE] IMU %s", imuControl.isEnabled() ? "ON" : "OFF");
       ble.sendIMUStatus();
       break;
     case CMD_REQ_IMU_STATUS:
-      LOG("🧭 IMU status requested");
+      LOG("[BLE] IMU status requested");
       ble.sendIMUStatus();
       break;
     case CMD_IMU_CALIBRATE:
-      LOG("🧭 IMU calibrate");
+      LOG("[BLE] IMU calibrate");
       imuControl.calibrate();
       ble.sendIMUStatus();
       break;
     case CMD_REQ_FW_VER:
-      LOG("📦 FW version requested");
+      LOG("[BLE] FW version requested");
       ble.sendFWVersion();
       break;
       
     default:
-      LOG("CMD unknown:0x%02X", cmd);
+      LOG("[SYS] CMD unknown:0x%02X", cmd);
       break;
   }
   
@@ -290,32 +290,84 @@ void SystemManager::loadCurrentSound() {
     folderPath = "/Audio" + String(currentRegister - 1);
   }
   
-  LOG("🔍 Loading sound from: %s", folderPath.c_str());
+  LOG("[SYS] Mencari suara di: %s", folderPath.c_str());
   
-  String filename = "";
+  String fullPath = ""; // Kita simpan full path-nya di sini
+  
   File dir = LittleFS.open(folderPath);
   if (dir && dir.isDirectory()) {
     File file = dir.openNextFile();
     while (file) {
       if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
-        filename = String(file.name());
+        
+        // GUNAKAN file.path() AGAR OTOMATIS MENDAPATKAN JALUR LENGKAP
+        // Contoh output otomatis: "/Audio/NinjaH2R1.raw"
+        fullPath = String(file.path()); 
         break;
       }
       file = dir.openNextFile();
     }
     dir.close();
   }
-  
-  if (filename != "" && player->loadFile(filename.c_str())) {
-    player->startPlayback();
-    LOG("✅ Loaded: %s", filename.c_str());
+
+  // Cek apakah file ditemukan
+  if (fullPath != "") {
+    LOG("[SYS] Ditemukan file: %s", fullPath.c_str());
+    // player->mute(true);
+    
+    // Pastikan variabel fullPath aman di memori saat dipanggil c_str()
+    if (player->loadFile(fullPath.c_str())) {
+      player->startPlayback();
+      delay(500);
+      LOG("[AP] ISR counter: %lu, bufLen: %lu", AudioPlayer::isrCounter, AudioPlayer::audioLength);
+      LOG("[SYS] SUKSES Play: %s", fullPath.c_str());
+    } else {
+      LOG("[SYS] GAGAL diload oleh AudioPlayer: %s", fullPath.c_str());
+    }
   } else {
-    LOG("❌ No file in: %s", folderPath.c_str());
+    LOG("[SYS] Kosong! Tidak ada file .raw di %s", folderPath.c_str());
   }
 }
 
+// void SystemManager::loadCurrentSound() {
+//   if (!player) return;
+  
+//   if (currentMode == MODE_PROGRAMMING) return;
+  
+//   String folderPath;
+//   if (currentRegister == 1) {
+//     folderPath = "/Audio";
+//   } else {
+//     folderPath = "/Audio" + String(currentRegister - 1);
+//   }
+  
+//   LOG("[SYS] Loading sound from: %s", folderPath.c_str());
+  
+//   String filename = "";
+//   File dir = LittleFS.open(folderPath);
+//   if (dir && dir.isDirectory()) {
+//     File file = dir.openNextFile();
+//     while (file) {
+//       if (!file.isDirectory() && String(file.name()).endsWith(".raw")) {
+//         filename = String(file.name());
+//         break;
+//       }
+//       file = dir.openNextFile();
+//     }
+//     dir.close();
+//   }
+
+//   if (filename != "" && player->loadFile((folderPath + "/" + filename).c_str())) {
+
+//     player->startPlayback();
+//     LOG("[SYS] Loaded: %s", filename.c_str());
+//   } else {
+//     LOG("[SYS] No file in: %s", folderPath.c_str());
+//   }
+// }
+
 void SystemManager::formatLittleFS() {
-  LOG("FORMAT FS");
+  LOG("[SYS] FORMAT FS");
   ble.formatLittleFS();
 }
 
@@ -336,11 +388,11 @@ void SystemManager::deleteCurrentRegisterFile() {
     File file = dir.openNextFile();
     while (file) {
       if (!file.isDirectory()) {
-        // String filePath = folderPath + "/" + file.name();
-        String filePath = String(file.name());
+        String filePath = folderPath + "/" + file.name();
+        // String filePath = String(file.name());
         file.close();
         LittleFS.remove(filePath);
-        LOG("DEL:%s", filePath.c_str());
+        LOG("[SYS] DEL:%s", filePath.c_str());
       }
       file = dir.openNextFile();
     }
@@ -348,7 +400,7 @@ void SystemManager::deleteCurrentRegisterFile() {
   }
   
   leds.setFastBlink(2000);
-  LOG("DEL reg%d", currentRegister);
+  LOG("[SYS] DEL reg%d", currentRegister);
 }
 
 void SystemManager::updateIMU() {
@@ -385,7 +437,7 @@ void SystemManager::startRev() {
     isRevving = true;
     revStartTime = millis();
     prevNormalRate = currentThrottleRate;
-    LOG("🔴 Rev start (base rate: %lu)", prevNormalRate);
+    LOG("[SYS] Rev start (base rate: %lu)", prevNormalRate);
   }
 }
 
@@ -394,7 +446,7 @@ void SystemManager::stopRev() {
     isRevving = false;
     isRevDown = true;
     revDownStartTime = millis();
-    LOG("🟢 Rev stop → rev down");
+    LOG("[SYS] Rev stop → rev down");
   }
 }
 
@@ -411,20 +463,20 @@ void SystemManager::triggerShift() {
 void SystemManager::triggerGearUp() {
   if (currentGear < maxGear && !isShifting && !isRevving) {
     currentGear++;
-    LOG("⬆️ Gear Up → %d", currentGear);
+    LOG("[SYS] Gear Up → %d", currentGear);
     triggerShift();
   } else if (currentGear >= maxGear) {
-    LOG("⚠️ Already at max gear (%d)", maxGear);
+    LOG("[SYS] Already at max gear (%d)", maxGear);
   }
 }
 
 void SystemManager::triggerGearDown() {
   if (currentGear > 1 && !isShifting && !isRevving) {
     currentGear--;
-    LOG("⬇️ Gear Down → %d", currentGear);
+    LOG("[SYS] Gear Down → %d", currentGear);
     triggerShift();
   } else if (currentGear <= 1) {
-    LOG("⚠️ Already at min gear");
+    LOG("[SYS] Already at min gear");
   }
 }
 

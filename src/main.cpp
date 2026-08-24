@@ -288,7 +288,7 @@ void setup() {
     &ADCTaskHandle,    // Task handle
     0                  // Core 0
   );
-  
+  player.setADCTaskHandle(&ADCTaskHandle);  // ← tambah ini
   LOG("Tasks OK");
 #else
   LOG("BLE task OK");           
@@ -433,7 +433,6 @@ void BLETask(void* parameter) {
   
   for(;;) {
     esp_task_wdt_reset();  // Feed watchdog
-    // Handle buttons, BLE and LED updates
     sysManager.updateButtons();
     sysManager.updateBLE();
     sysManager.updateLEDs();

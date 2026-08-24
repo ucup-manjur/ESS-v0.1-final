@@ -120,6 +120,10 @@ public:
   uint32_t getSampleRate();
 
   static void IRAM_ATTR onTimerISR();
+  static TaskHandle_t* adcTaskHandle;
+  static void setADCTaskHandle(TaskHandle_t* handle) { adcTaskHandle = handle; }
+  static volatile bool isLoading;
+  static volatile uint32_t isrCounter;
 
 private:
   void normalizePCM8(uint8_t *data, size_t length);

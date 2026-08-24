@@ -6,7 +6,7 @@ VolumeControl::VolumeControl() {}
 
 void VolumeControl::begin() {
   buildVolumeLUT();
-  Serial.println("✅ Volume Control initialized");
+  Serial.println("[VC] Volume Control initialized");
 }
 
 void VolumeControl::setVolume(uint8_t level) {
@@ -19,12 +19,12 @@ void VolumeControl::setVolume(uint8_t level) {
   if (volumeMultiplier > 0.9f) volumeMultiplier = 0.9f;
   
   buildVolumeLUT();
-  Serial.printf("🔊 Volume: %d%%\n", level);
+  Serial.printf("[VC] Volume: %d%%\n", level);
 }
 
 void VolumeControl::mute(bool enable) {
   muted = enable;
-  Serial.printf("🔇 Mute: %s\n", muted ? "ON" : "OFF");
+  Serial.printf("[VC] Mute: %s\n", muted ? "ON" : "OFF");
 }
 
 void VolumeControl::toggleMute() {

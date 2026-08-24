@@ -20,12 +20,12 @@ bool BLEControl::needsAdvertising = false;
 BLEControl ble;
 
 void BLEControl::ServerCallbacks::onConnect(NimBLEServer* pServer) {
-  LOG("📱 BLE Connected");
+  LOG("[BLE] Connected");
   NimBLEDevice::startAdvertising();
 }
 
 void BLEControl::ServerCallbacks::onDisconnect(NimBLEServer* pServer) {
-  LOG("📴 BLE Disconnected");
+  LOG("[BLE] Disconnected");
   // NimBLEDevice::startAdvertising();
   BLEControl::needsAdvertising = true;
 }
@@ -66,7 +66,7 @@ void BLEControl::CharacteristicCallbacks::onWrite(NimBLECharacteristic* pChar) {
   BLEControl::commandDataLen = 1;
   BLEControl::commandData[0] = val;
   BLEControl::commandReady = true;
-  LOG("✅ BLE Command: 0x%02X, Val: %d", cmd, val);
+  LOG("[BLE] Command: 0x%02X, Val: %d", cmd, val);
 }
 
 BLEControl* BLEControl::instance = nullptr;
@@ -237,7 +237,7 @@ void BLEControl::sendCurrentPlaying() {
   }
   String response = "0xAA," + title;
   sendBLEResponse(response);
-  LOG("📡 Current playing: %s", title.c_str());
+  LOG("[BLE] Current playing: %s", title.c_str());
 }
 
 void BLEControl::replyFileList(uint8_t registerNum) {
@@ -260,7 +260,7 @@ void BLEControl::replyFileList(uint8_t registerNum) {
 
     String response = "0xAA,reg" + String(i + 1) + ":" + title;
     sendBLEResponse(response);
-    LOG("📡 File list sent: reg%d = %s", i + 1, title.c_str());
+    LOG("[BLE] File list sent: reg%d = %s", i + 1, title.c_str());
     delay(50);
   }
 }
@@ -272,16 +272,16 @@ void BLEControl::update() {
   if (BLEControl::needsAdvertising) {
     delay(100); // Beri jeda 100ms agar OS membersihkan memori koneksi lama
     NimBLEDevice::startAdvertising();
-    LOG("📡 Restarting Advertising...");
+    LOG("[BLE] Restarting Advertising...");
     BLEControl::needsAdvertising = false;
   }
 }
 
 void BLEControl::createAudioFolders() {
-  if (!LittleFS.exists("/audio"))         LittleFS.mkdir("/audio");
-  if (!LittleFS.exists("/audio/engine"))  LittleFS.mkdir("/audio/engine");
-  if (!LittleFS.exists("/audio/shift"))   LittleFS.mkdir("/audio/shift");
-  if (!LittleFS.exists("/audio/effects")) LittleFS.mkdir("/audio/effects");
+  if (!LittleFS.exists("/Audio"))         LittleFS.mkdir("/Audio");
+  if (!LittleFS.exists("/Audio/engine"))  LittleFS.mkdir("/Audio/engine");
+  if (!LittleFS.exists("/Audio/shift"))   LittleFS.mkdir("/Audio/shift");
+  if (!LittleFS.exists("/Audio/effects")) LittleFS.mkdir("/Audio/effects");
 }
 
 void BLEControl::listRawFiles(const char* folder) {
@@ -357,7 +357,7 @@ void BLEControl::sendBLEResponse(String response) {
   if (pCharacteristic) {
     pCharacteristic->setValue((uint8_t*)response.c_str(), response.length());
     pCharacteristic->notify();
-    LOG("📡 BLE Response (%d bytes): %s", response.length(), response.c_str());
+    LOG("[BLE] Response (%d bytes): %s", response.length(), response.c_str());
   }
 }
 
